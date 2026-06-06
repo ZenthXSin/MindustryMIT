@@ -32,5 +32,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: tool-jar
-          path: tool/build/libs/*.jar
+          path: build/libs/*.jar
           if-no-files-found: error

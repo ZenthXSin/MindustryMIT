@@ -46,7 +46,7 @@ jobs:
       - name: Stage release artifact
         run: |
           mkdir -p release
-          cp tool/build/libs/tool.jar "release/tool-${{ steps.ver.outputs.version }}.jar"
+          cp build/libs/tool.jar "release/tool-${{ steps.ver.outputs.version }}.jar"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -60,7 +60,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish to GitHub Packages
-        run: ./gradlew :tool:publish -Pversion=${{ steps.ver.outputs.version }} --no-daemon --stacktrace
+        run: ./gradlew publish -Pversion=${{ steps.ver.outputs.version }} --no-daemon --stacktrace
         env:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
