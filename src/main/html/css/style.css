@@ -517,7 +517,7 @@ textarea:focus {
 
 .canvas-viewport {
   position: relative;
-  overflow: auto;
+  overflow: hidden;
   min-height: 0;
   background:
     linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
@@ -525,24 +525,34 @@ textarea:focus {
     radial-gradient(circle at 55% 40%, rgba(66, 209, 144, 0.07), transparent 34%),
     #111516;
   background-size: 24px 24px, 24px 24px, 100% 100%, 100% 100%;
+  cursor: grab;
+}
+
+.canvas-viewport:active {
+  cursor: grabbing;
 }
 
 .canvas-world {
-  position: relative;
-  width: 2200px;
-  height: 1500px;
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
   transform-origin: 0 0;
+  overflow: visible;
 }
 
 .wire-layer,
 .node-layer {
   position: absolute;
-  inset: 0;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
 }
 
 .wire-layer {
-  width: 2200px;
-  height: 1500px;
   pointer-events: none;
   overflow: visible;
 }
@@ -553,10 +563,24 @@ textarea:focus {
   stroke-width: 3;
 }
 
+.wire.owner {
+  stroke: rgba(155, 165, 160, 0.58);
+  stroke-dasharray: 7 6;
+  stroke-width: 2;
+}
+
+.wire.invalid {
+  stroke: rgba(239, 113, 106, 0.76);
+}
+
 .wire-shadow {
   fill: none;
   stroke: rgba(0, 0, 0, 0.45);
   stroke-width: 7;
+}
+
+.wire-shadow.owner {
+  stroke-width: 5;
 }
 
 .node {
@@ -567,7 +591,8 @@ textarea:focus {
   border-radius: 8px;
   background: var(--node);
   box-shadow: var(--shadow);
-  overflow: hidden;
+  overflow: visible;
+  cursor: default;
 }
 
 .node.is-selected {
@@ -599,6 +624,26 @@ textarea:focus {
 
 .node.root .node-kind {
   background: var(--accent);
+}
+
+.node.local .node-kind {
+  background: var(--blue);
+}
+
+.builtin-node .node-kind {
+  background: #d7db7a;
+}
+
+.field-node .node-kind {
+  background: var(--amber);
+}
+
+.node.is-connect-target {
+  border-color: rgba(114, 184, 239, 0.7);
+}
+
+.node.is-connecting {
+  border-color: var(--amber);
 }
 
 .node-body {
@@ -633,6 +678,8 @@ textarea:focus {
   border: 2px solid #121617;
   border-radius: 50%;
   background: var(--accent);
+  padding: 0;
+  z-index: 3;
 }
 
 .pin.in {
@@ -644,6 +691,98 @@ textarea:focus {
   right: -6px;
   top: 43px;
   background: var(--amber);
+}
+
+.class-add {
+  position: absolute;
+  left: -17px;
+  top: 14px;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgba(66, 209, 144, 0.7);
+  border-radius: 50%;
+  color: #08140f;
+  background: var(--accent);
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.class-add:hover,
+.pin:hover {
+  box-shadow: 0 0 0 4px rgba(66, 209, 144, 0.18);
+}
+
+.field-menu {
+  position: absolute;
+  z-index: 9;
+  width: 264px;
+  max-height: 360px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #1a1f21;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.field-menu-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 42px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  background: #242a2d;
+}
+
+.field-menu-header strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.field-menu-list {
+  display: grid;
+  max-height: 318px;
+  overflow: auto;
+  padding: 8px;
+  gap: 5px;
+}
+
+.field-menu-list button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 0 8px;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+}
+
+.field-menu-list button:hover {
+  border-color: var(--line);
+  background: #22292b;
+}
+
+.field-menu-list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-menu-list small,
+.field-menu-empty {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .empty-canvas {
