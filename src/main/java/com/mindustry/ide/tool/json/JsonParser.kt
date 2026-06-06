@@ -34,6 +34,9 @@ interface IJsonParser {
     
     // 所有字段
     fun getAllFields(className: String): List<FieldMeta>
+
+    // 所有类
+    fun getAllClasses(): List<String>
     
     // 父类
     fun getParentType(className: String): String
@@ -47,8 +50,9 @@ open class JsonParser : IJsonParser {
     val classDocs = mutableMapOf<String, TypeMeta>()
     val fieldDocs = mutableMapOf<String, MutableMap<String, FieldMeta>>()
     
-    // 类映射
-    override val classMap: ObjectMap<String?, Class<*>?>? = ClassMap.classes
+    // 类映射（getter 延迟加载；在无 Mindustry 环境下安全返回 null）
+    override val classMap: ObjectMap<String?, Class<*>?>?
+        get() = try { ClassMap.classes } catch (_: NoClassDefFoundError) { null }
 
     companion object {
         // JSON 格式
@@ -83,7 +87,14 @@ open class JsonParser : IJsonParser {
 
     // 所有字段
     override fun getAllFields(className: String): List<FieldMeta> {
-        return classDocs[className]?.fields ?: emptyList()
+        classDocs[className]?.fields?.let { return it }
+        return classMap?.find { it.key == className }?.value?.declaredFields?.map { FieldMeta(it.name, it.type.name, "", "") } ?: emptyList()
+    }
+
+    // 所有类
+    override fun getAllClasses(): List<String> {
+        if (classDocs.isNotEmpty()) return classDocs.keys.toList()
+        return classMap?.map { it.key.toString() } ?: emptyList()
     }
     
     // 父类
@@ -113,7 +124,38 @@ open class JsonParser : IJsonParser {
         }
     }
 
+    fun loadDocs(docPath: File): Int {
+        if (!docPath.exists()) return 0
+
+        classDocs.clear()
+        fieldDocs.clear()
+
+        val docFiles = if (docPath.isFile) {
+            listOf(docPath)
+        } else {
+            docPath.walkTopDown()
+                .filter { it.isFile && it.extension.equals("json", ignoreCase = true) }
+                .toList()
+        }
+
+        return docFiles.count { load(it) != null }
+    }
+
     override fun load(路径: File): kotlinx.serialization.json.JsonElement? {
-        return TODO("提供返回值")
+        if (!路径.exists()) return null
+        if (路径.isDirectory) {
+            loadDocs(路径)
+            return null
+        }
+
+        return try {
+            val content = 路径.readText(Charsets.UTF_8)
+            val element = jsonFormat.parseToJsonElement(content)
+            val meta = parseJsonToMeta(content) ?: return null
+            indexClassMeta(meta)
+            element
+        } catch (e: Exception) {
+            null
+        }
     }
 }

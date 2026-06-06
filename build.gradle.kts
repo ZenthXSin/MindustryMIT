@@ -34,6 +34,10 @@ dependencies {
 group = "com.mindustry.ide"
 version = project.findProperty("version")?.toString() ?: "0.0.0-SNAPSHOT"
 
+tasks.withType<JavaExec> {
+    jvmArgs("-Dfile.encoding=UTF-8", "-Dstdout.encoding=UTF-8", "-Dstderr.encoding=UTF-8")
+}
+
 tasks.jar {
     archiveBaseName.set("tool")
     archiveVersion.set(project.version.toString())

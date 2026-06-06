@@ -1,146 +1,229 @@
-# Tool Module - Mindustry JSON Editor
+# MindustryMIT
 
-这是一个用于编辑 Mindustry 游戏 JSON 配置文件的独立模块。
+MindustryMIT 是一个 Kotlin/JVM 工具库，用于辅助创建和编辑 Mindustry Mod 的 JSON 配置。当前代码主要包含 JSON 工作文件封装、Mindustry 类型/字段查询、字段构建、文档元数据解析，以及一个简单的 WebSocket API 封装。
 
-## 模块结构
+## 当前状态
 
+- 语言与构建：Kotlin/JVM，Gradle Kotlin DSL。
+- 目标产物：`tool-<version>.jar`。当前 `shadowJar` 使用空 classifier，`build` 任务会构建 shadow jar。
+- Mindustry 与 Arc 依赖是 `compileOnly`，运行时需要由宿主环境或使用方提供。
+- `JsonWorkFile.import()` 与 `export()` 已有基础实现，可以导入 JSON 对象并导出格式化 JSON。
+- `JsonParser.load()`、`WebSocketData` 的 `DataType.Object`、`DocFetch.saveTypeMeta()` 仍是 `TODO()`。
+
+## 项目结构
+
+```text
+src/main/java/com/mindustry/ide/tool/
+├── WorkFile.kt
+└── json/
+    ├── JsonApi.kt
+    ├── JsonEditorTool.kt
+    ├── JsonParser.kt
+    ├── JsonWorkFile.kt
+    └── libs/
+        ├── DocFetch.kt
+        └── TypeMap.kt
 ```
-tool/
-├── build.gradle.kts                    # 模块构建配置
-└── src/main/java/com/mindustry/ide/tool/
-    ├── WorkFile.kt                     # 工作文件基类
-    └── json/
-        ├── JsonParser.kt               # JSON 解析器接口和实现
-        ├── JsonEditorTool.kt           # JSON 编辑器工具
-        ├── JsonWorkFile.kt             # JSON 工作文件实现
-        └── libs/
-            ├── DocFetch.kt             # 文档获取工具
-            ├── TypeMap.kt              # 类型映射
-            └── DetectingContentParser.kt
-```
 
-## 主要功能
+## 核心模块
 
-### 1. IJsonParser 接口
+### WorkFile
 
-所有需要访问 Mindustry 类信息的组件都通过 `IJsonParser` 接口进行交互，而不是直接依赖全局变量。
+`WorkFile` 是工作文件基类，保存文件元数据并定义导入、导出、更新内容等接口。
 
 ```kotlin
-interface IJsonParser {
-    val classMap: ObjectMap<String?, Class<*>?>?
-    fun getFieldDefaultValue(className: String, fieldName: String): String
-    fun getFieldDoc(className: String, fieldName: String): String
-    fun getClassDoc(className: String): String
-    fun getAllFields(className: String): List<FieldMeta>
-    fun getParentType(className: String): String
-    fun load(路径: File): kotlinx.serialization.json.JsonElement?
+abstract class WorkFile(var name: String, var data: WorkFileData = WorkFileData()) {
+    open fun load(json: String)
+    open fun update()
+    abstract fun getContent(): String
+    abstract fun import(content: String)
+    abstract fun export(): String
+    abstract fun init()
 }
 ```
 
-### 2. 使用示例
+### JsonParser
 
-#### 创建 JSON 编辑器
+`JsonParser` 提供 Mindustry 类和字段元数据查询。默认实现会从 `mindustry.mod.ClassMap.classes` 读取类型映射；如果当前运行环境没有 Mindustry 类，会安全返回 `null` 或空列表。
+
+主要能力：
+
+- 查询类列表：`getAllClasses()`
+- 查询字段列表：`getAllFields(className)`
+- 查询字段文档和默认值：`getFieldDoc()`、`getFieldDefaultValue()`
+- 解析并索引文档元数据：`parseJsonToMeta()`、`indexClassMeta()`
+
+### JsonWorkFile
+
+`JsonWorkFile` 负责把类构建信息转换成 Mindustry JSON，也可以从已有 JSON 对象恢复字段结构。
+
+已支持：
+
+- 根 JSON 对象导入。
+- 基础值、嵌套对象、数组字段导入。
+- `Seq`、Java 数组、`List`、`ArrayList` 的基础识别。
+- `export()` 输出格式化 JSON。
+
+当前限制：
+
+- 嵌套数组暂未处理。
+- 字段类型默认值只覆盖常见基础类型。
+
+### JsonEditorTool
+
+`JsonEditorTool` 是面向编辑流程的抽象封装，需要使用方实现日志回调。
 
 ```kotlin
-// 在 Android 环境中
-class MyJsonEditor(parser: IJsonParser) : JsonEditorTool(parser) {
-    override fun error(message: String) {
-        Log.e("JsonEditor", message)
-    }
-    
-    override fun info(message: String) {
-        Log.i("JsonEditor", message)
-    }
-    
-    override fun warning(message: String) {
-        Log.w("JsonEditor", message)
-    }
+val editor = object : JsonEditorTool(parser) {
+    override fun error(message: String) = println("[ERROR] $message")
+    override fun info(message: String) = println("[INFO] $message")
+    override fun warning(message: String) = println("[WARN] $message")
+    override fun debug(message: String) = println("[DEBUG] $message")
 }
 
-// 使用
-val editor = MyJsonEditor(myParser)
-val jsonWorkFile = editor.new("my_block") {
-    first { it.name == "ItemTurret" }
+val workFile = editor.new("my-block") {
+    first { it.name == "Block" }
 }
-```
 
-#### 添加字段
-
-```kotlin
 editor.addFieldBuild({
-    first { it.field.name == "shootY" }
+    first { it.field.name == "health" }
 }) {
-    value.value = "5"
+    value.value = "100"
+    this
 }
+
+println(workFile.export())
 ```
 
-#### 导出 JSON
+### JsonApi
+
+`JsonApi` 把 `JsonEditorTool` 包装成可通过 WebSocket 调用的 API。入口类是 `JsonApi.ToolData`，内部通过 `classDataMap` 保存创建出的工具实例。
 
 ```kotlin
-val jsonContent = jsonWorkFile.getContent()
-println(jsonContent)
+val toolData = JsonApi.ToolData()
+toolData.error = { println("[ERROR] $it") }
+toolData.info = { println("[INFO] $it") }
+toolData.warning = { println("[WARN] $it") }
+toolData.debug = { println("[DEBUG] $it") }
+
+val classId = toolData.newClass("Block")
+val removed = toolData.removeClass(classId)
+
+val wsHandler = JsonApi.ToolData.JsonApiWebSocketHandler(toolData, 8887)
+wsHandler.start()
 ```
 
-## 迁移指南
+## WebSocket 协议
 
-### 从旧版本迁移
+消息使用 `WebSocketData` 序列化。`content` 是字符串字段；当消息类型有输入参数时，`content` 必须是对应参数的 JSON 字符串。
 
-**之前：**
+当前支持的 `WebSocketDataType`：
+
+| 类型 | 输入 | 输出 |
+| --- | --- | --- |
+| `AllClass` | 无 | `Class_List: List` |
+| `AllField` | `Class_Name: String` | `Field_List: List` |
+| `NewClass` | `Class_Name: String` | `Class_Id: Int` |
+| `RemoveClass` | `Class_Id: Int` | `Success: Boolean` |
+
+请求示例：
+
 ```kotlin
-// 直接访问 Vars.parser
-val tool = object : JsonEditorTool() { ... }
+val request = JsonParser.jsonFormat.encodeToString(
+    WebSocketData.serializer(),
+    WebSocketData(
+        wsType = WebSocketDataType.AllField,
+        content = """{"Class_Name":"Block"}"""
+    )
+)
 ```
 
-**现在：**
+服务端收到消息后会先向当前连接发送 `Echo: <原消息>`，再广播 `contentParsing()` 生成的 API 回复。
+
+## DocFetch
+
+`DocFetch` 用于从 Mindustry Wiki 的 Modding 文档页面抓取类型元数据。
+
+默认配置里启用了本地代理：
+
 ```kotlin
-// 传入 parser 实例
-val tool = object : JsonEditorTool(parser) { ... }
+DocFetch.USE_PROXY = true
+DocFetch.PROXY_HOST = "127.0.0.1"
+DocFetch.PROXY_PORT = 10090
 ```
 
-### 在 app 模块中使用
+如果不需要代理，需要在执行前关闭：
 
-1. 确保在 `build.gradle.kts` 中添加了依赖：
 ```kotlin
-dependencies {
-    implementation(project(":tool"))
-}
+DocFetch.USE_PROXY = false
 ```
 
-2. 实现 `IJsonParser` 接口或继承 `JsonParser`：
+注意：`saveTypeMeta()` 当前仍是 `TODO()`，抓取结果需要由子类覆盖保存逻辑。
+
+## 构建
+
+Windows：
+
+```powershell
+.\gradlew.bat shadowJar
+.\gradlew.bat build
+```
+
+Linux/macOS：
+
+```bash
+./gradlew shadowJar
+./gradlew build
+```
+
+构建输出位于：
+
+```text
+build/libs/
+```
+
+`build` 任务依赖 `shadowJar`。
+
+## 发布
+
+项目配置了 GitHub Actions：
+
+- `.github/workflows/build.yml`
+  - 触发：Pull Request 到 `main`、手动触发。
+  - 行为：执行 `./gradlew shadowJar` 并上传 jar artifact。
+- `.github/workflows/release.yml`
+  - 触发：推送到 `main`、手动触发。
+  - 行为：根据最新 tag 计算下一个版本，构建 shadow jar，创建 GitHub Release，并发布到 GitHub Packages。
+
+本地发布配置使用：
+
 ```kotlin
-class MyParser : JsonParser() {
-    override val classMap = /* 你的类映射 */
-    
-    override fun load(路径: File): JsonElement? {
-        // 实现加载逻辑
-    }
-}
+group = "com.mindustry.ide"
+artifactId = "tool"
 ```
 
-3. 将 parser 实例传递给工具类：
-```kotlin
-val editor = MyJsonEditor(myParser)
+GitHub Packages 发布需要环境变量：
+
+```text
+GITHUB_REPOSITORY
+GITHUB_ACTOR
+GITHUB_TOKEN
 ```
 
-## 依赖项
+## 依赖
 
-- **Mindustry Core** (compileOnly): `com.github.Anuken.Mindustry:core:v157.4`
-- **Arc Core** (compileOnly): `com.github.Anuken.Arc:arc-core:v157.4`
-- **Kotlin Serialization**: `org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0`
-- **Coroutines**: `org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2`
-- **Jsoup**: `org.jsoup:jsoup:1.22.2`
-
-## 优势
-
-1. **解耦合**: 通过接口注入 parser，不再依赖全局变量
-2. **可测试性**: 可以轻松创建 mock parser 进行单元测试
-3. **灵活性**: 可以在不同环境（Android、JVM）中使用不同的 parser 实现
-4. **模块化**: 独立的 build 配置，便于维护和复用
+| 依赖 | 作用 | 版本 |
+| --- | --- | --- |
+| Mindustry Core | Mindustry 类型来源，`compileOnly` | v157.4 |
+| Arc Core | Arc 数据结构和注解，`compileOnly` | v157.4 |
+| kotlinx-serialization-json | JSON 序列化 | 1.11.0 |
+| kotlinx-coroutines-core | 协程 | 1.10.2 |
+| Jsoup | HTML 文档解析 | 1.22.2 |
+| Java-WebSocket | WebSocket 服务端/客户端 | 1.5.4 |
 
 ## 注意事项
 
-- `DetectingContentParser.kt` 目前为空文件，需要根据需求实现
-- `JsonWorkFile.import()` 和 `export()` 方法尚未实现
-- `JsonParser.load()` 方法需要在子类中实现具体逻辑
-
-## JsonApi的ws服务器规范
+- 在普通 JVM 环境中，如果没有 Mindustry 运行时，`JsonParser.classMap` 会返回 `null`，类和字段查询会返回空结果。
+- `DataType.Object` 尚未实现，收到该类型输入会触发 `TODO()`。
+- `JsonParser.load()` 尚未实现。
+- `DocFetch` 默认会禁用 SSL 校验并设置代理，作为正式工具使用前建议重新审视这部分网络逻辑。
