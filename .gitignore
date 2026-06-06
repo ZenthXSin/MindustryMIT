@@ -1,10 +1,5 @@
 /.claude
 /.codegraph
 /.gradle
-/build
-/gradle/
-!/gradle/wrapper/
-!/gradle/wrapper/gradle-wrapper.jar
-!/gradle/wrapper/gradle-wrapper.properties
 /.idea
-/tool/build
+/build
