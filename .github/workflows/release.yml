@@ -41,12 +41,12 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Build tool.jar
-        run: ./gradlew jar -Pversion=${{ steps.ver.outputs.version }} --no-daemon --stacktrace
+        run: ./gradlew shadowJar -Pversion=${{ steps.ver.outputs.version }} --no-daemon --stacktrace
 
       - name: Stage release artifact
         run: |
           mkdir -p release
-          cp build/libs/tool.jar "release/tool-${{ steps.ver.outputs.version }}.jar"
+          cp build/libs/tool-${{ steps.ver.outputs.version }}.jar "release/tool-${{ steps.ver.outputs.version }}.jar"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

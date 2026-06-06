@@ -2,6 +2,8 @@ plugins {
     id("java-library")
     id("org.jetbrains.kotlin.jvm") version "2.3.21"
     kotlin("plugin.serialization") version "2.2.10"
+    id("com.gradleup.shadow") version "8.3.6"
+    `maven-publish`
 }
 
 repositories{
@@ -27,4 +29,44 @@ dependencies {
 
     // Java-WebSocket
     implementation("org.java-websocket:Java-WebSocket:1.5.4")
+}
+
+group = "com.mindustry.ide"
+version = project.findProperty("version")?.toString() ?: "0.0.0-SNAPSHOT"
+
+tasks.jar {
+    archiveBaseName.set("tool")
+    archiveVersion.set(project.version.toString())
+}
+
+tasks.shadowJar {
+    archiveBaseName.set("tool")
+    archiveVersion.set(project.version.toString())
+    archiveClassifier.set("")
+    mergeServiceFiles()
+}
+
+tasks.build {
+    dependsOn(tasks.shadowJar)
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            from(components["java"])
+            groupId = project.group.toString()
+            artifactId = "tool"
+            version = project.version.toString()
+        }
+    }
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/${System.getenv("GITHUB_REPOSITORY")}")
+            credentials {
+                username = System.getenv("GITHUB_ACTOR")
+                password = System.getenv("GITHUB_TOKEN")
+            }
+        }
+    }
 }
