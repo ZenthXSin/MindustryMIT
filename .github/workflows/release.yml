@@ -41,7 +41,7 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Build tool.jar
-        run: ./gradlew :tool:jar -Pversion=${{ steps.ver.outputs.version }} --no-daemon --stacktrace
+        run: ./gradlew jar -Pversion=${{ steps.ver.outputs.version }} --no-daemon --stacktrace
 
       - name: Stage release artifact
         run: |
