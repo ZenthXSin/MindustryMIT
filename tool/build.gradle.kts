@@ -2,6 +2,30 @@ plugins {
     id("java-library")
     id("org.jetbrains.kotlin.jvm")
     kotlin("plugin.serialization") version "2.2.10"
+    `maven-publish`
+}
+
+group = "com.github.zenthxsin.mindustrymit"
+version = (findProperty("version") as? String)?.takeIf { it.isNotBlank() && it != "unspecified" } ?: "0.0.0-SNAPSHOT"
+
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            from(components["java"])
+            artifactId = "tool"
+        }
+    }
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            val repo = System.getenv("GITHUB_REPOSITORY") ?: "ZenthXSin/MindustryMIT"
+            url = uri("https://maven.pkg.github.com/$repo")
+            credentials {
+                username = System.getenv("GITHUB_ACTOR") ?: (findProperty("gpr.user") as String?)
+                password = System.getenv("GITHUB_TOKEN") ?: (findProperty("gpr.token") as String?)
+            }
+        }
+    }
 }
 
 dependencies {
