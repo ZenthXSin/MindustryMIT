@@ -1,9 +1,24 @@
 (function () {
-  if (window.MindustryVisualEditorLoaded) return;
-  window.MindustryVisualEditorLoaded = true;
+  "use strict";
 
-  const NODE_WIDTH = 236;
-  const CLASS_KINDS = {
+  if (window.MindustryMitJsonEditorLoaded) return;
+  window.MindustryMitJsonEditorLoaded = true;
+
+  const STORAGE_KEY = "mindustrymit.table-editor.project.v2";
+  const SYNC_DELAY_MS = 260;
+  const REQUEST_TIMEOUT_MS = 6000;
+
+  const CONTENT_KINDS = [
+    ["blocks", "方块"],
+    ["items", "物品"],
+    ["liquids", "液体"],
+    ["units", "单位"],
+    ["status-effects", "状态"],
+    ["weathers", "天气"],
+    ["planets", "星球"],
+  ];
+
+  const DEFAULT_CLASS_BY_KIND = {
     blocks: "Wall",
     items: "Item",
     liquids: "Liquid",
@@ -13,169 +28,194 @@
     planets: "Planet",
   };
 
-  const TYPE_CATALOG = [
-    type("Content", "", "Mindustry content base type."),
-    type("UnlockableContent", "Content", "Content that can be unlocked in game."),
-    type("Block", "UnlockableContent", "Base type for block JSON."),
-    type("Wall", "Block", "Defensive block."),
-    type("Drill", "Block", "Ore mining block."),
-    type("Conveyor", "Block", "Item transport block."),
-    type("Turret", "Block", "Ammo driven turret block."),
-    type("Item", "UnlockableContent", "Item definition."),
-    type("Liquid", "UnlockableContent", "Liquid definition."),
-    type("UnitType", "UnlockableContent", "Unit definition."),
-    type("StatusEffect", "UnlockableContent", "Unit status effect."),
-    type("Weather", "Content", "Weather definition."),
-    type("Planet", "Content", "Planet definition."),
-    type("Weapon", "", "Nested weapon object."),
-    type("BulletType", "", "Nested bullet object."),
-  ];
-
-  const FIELD_CATALOG = {
-    Block: [
-      field("name", "String", "sample-block", "内部名称。", true),
-      field("localizedName", "String", "Sample Block", "显示名称。"),
-      field("description", "String", "", "说明文本。"),
-      field("size", "Int", "1", "方块尺寸。", true),
-      field("health", "Int", "120", "生命值。"),
-      field("requirements", "Array<ItemStack>", "copper/20", "建造消耗。", false, ["Item"]),
-      field("category", "String", "defense", "建造分类。"),
-      field("research", "String", "", "科技树前置。", false, ["Block", "Item", "Liquid", "UnitType"]),
-      field("alwaysUnlocked", "Boolean", "false", "是否默认解锁。"),
-    ],
-    Wall: [
-      field("armor", "Float", "0", "额外护甲。"),
-      field("absorbLasers", "Boolean", "false", "是否吸收激光。"),
-      field("insulated", "Boolean", "false", "是否绝缘。"),
-    ],
-    Drill: [
-      field("drillTime", "Float", "280", "采矿时间。", true),
-      field("tier", "Int", "2", "采矿层级。"),
-      field("liquidBoostIntensity", "Float", "1.6", "液体增强倍率。"),
-    ],
-    Conveyor: [
-      field("speed", "Float", "0.08", "运输速度。", true),
-      field("junctionReplacement", "String", "", "替换交叉运输块。", false, ["Block"]),
-      field("bridgeReplacement", "String", "", "替换桥接运输块。", false, ["Block"]),
-    ],
-    Turret: [
-      field("range", "Float", "160", "攻击范围。", true),
-      field("reload", "Float", "45", "装填时间。"),
-      field("ammoTypes", "Object", "{}", "弹药映射。", false, ["BulletType"]),
-      field("targetAir", "Boolean", "true", "攻击空中目标。"),
-      field("targetGround", "Boolean", "true", "攻击地面目标。"),
-    ],
-    Item: [
-      field("name", "String", "sample-item", "内部名称。", true),
-      field("localizedName", "String", "Sample Item", "显示名称。"),
-      field("description", "String", "", "说明文本。"),
-      field("color", "Color", "#8fc7ff", "颜色。"),
-      field("cost", "Float", "1", "成本系数。"),
-      field("hardness", "Int", "1", "硬度。"),
-      field("explosiveness", "Float", "0", "爆炸性。"),
-      field("flammability", "Float", "0", "易燃性。"),
-    ],
-    Liquid: [
-      field("name", "String", "sample-liquid", "内部名称。", true),
-      field("localizedName", "String", "Sample Liquid", "显示名称。"),
-      field("description", "String", "", "说明文本。"),
-      field("color", "Color", "#65d5ff", "颜色。"),
-      field("heatCapacity", "Float", "0.5", "热容量。"),
-      field("temperature", "Float", "0.5", "温度。"),
-      field("viscosity", "Float", "0.5", "粘度。"),
-    ],
-    UnitType: [
-      field("name", "String", "sample-unit", "内部名称。", true),
-      field("localizedName", "String", "Sample Unit", "显示名称。"),
-      field("description", "String", "", "说明文本。"),
-      field("health", "Int", "360", "生命值。", true),
-      field("speed", "Float", "1.2", "移动速度。"),
-      field("flying", "Boolean", "false", "是否飞行。"),
-      field("weapons", "Array<Object>", "", "武器列表。", false, ["Weapon"]),
-      field("research", "String", "", "科技树前置。", false, ["Block", "Item", "Liquid", "UnitType"]),
-    ],
-    Weapon: [
-      field("name", "String", "weapon", "武器名称。"),
-      field("reload", "Float", "30", "装填时间。"),
-      field("x", "Float", "0", "挂点 X。"),
-      field("y", "Float", "0", "挂点 Y。"),
-      field("bullet", "Object", "{}", "子弹对象。", false, ["BulletType"]),
-    ],
-    BulletType: [
-      field("damage", "Float", "20", "伤害。", true),
-      field("speed", "Float", "4", "速度。"),
-      field("lifetime", "Float", "60", "持续时间。"),
-      field("splashDamage", "Float", "0", "范围伤害。"),
-    ],
-    StatusEffect: [
-      field("name", "String", "sample-effect", "内部名称。", true),
-      field("localizedName", "String", "Sample Effect", "显示名称。"),
-      field("color", "Color", "#f2b95f", "颜色。"),
-      field("damage", "Float", "0", "每帧伤害。"),
-      field("speedMultiplier", "Float", "1", "速度倍率。"),
-    ],
-    Weather: [
-      field("name", "String", "sample-weather", "内部名称。", true),
-      field("localizedName", "String", "Sample Weather", "显示名称。"),
-      field("duration", "Float", "600", "持续时间。"),
-    ],
-    Planet: [
-      field("name", "String", "sample-planet", "内部名称。", true),
-      field("localizedName", "String", "Sample Planet", "显示名称。"),
-      field("radius", "Float", "1", "半径。"),
-      field("visible", "Boolean", "true", "是否可见。"),
-    ],
+  const KIND_BY_CLASS = {
+    Item: "items",
+    Liquid: "liquids",
+    UnitType: "units",
+    StatusEffect: "status-effects",
+    Weather: "weathers",
+    Planet: "planets",
   };
 
-  const BUILTIN_INSTANCES = {
-    blocks: {
-      className: "Block",
-      values: ["core-shard", "core-foundation", "copper-wall", "mechanical-drill", "duo", "router"],
-    },
-    items: {
-      className: "Item",
-      values: ["copper", "lead", "graphite", "silicon", "titanium", "thorium"],
-    },
-    liquids: {
-      className: "Liquid",
-      values: ["water", "slag", "oil", "cryofluid"],
-    },
-    units: {
-      className: "UnitType",
-      values: ["dagger", "mace", "fortress", "mono", "poly"],
-    },
+  const OUTPUT_TYPES = {
+    Init: { Success: "boolean", Doc_Count: "int", Message: "string" },
+    AllClass: { Class_List: "list" },
+    AllField: { Field_List: "list" },
+    FieldDoc: { Field_Doc: "string" },
+    FieldDefaultValue: { Default_Value: "string" },
+    GetFieldValue: { Success: "boolean", Value: "string", Message: "string" },
+    SetFieldValue: { Success: "boolean", Value: "string", Message: "string" },
+    AddElement: { Success: "boolean", Index: "int", Message: "string" },
+    ExportClass: { Success: "boolean", Content: "string", Message: "string" },
+    NewClass: { Class_Id: "int" },
+    RemoveClass: { Success: "boolean" },
+    FetchDoc: { Success: "boolean", Doc_Count: "int", Message: "string" },
+  };
+
+  const LOCAL_TYPES = [
+    typeDef("Content", "", "Mindustry 内容基类。"),
+    typeDef("UnlockableContent", "Content", "可解锁内容，常用于方块、物品、液体和单位。"),
+    typeDef("Block", "UnlockableContent", "所有方块的基础类型。"),
+    typeDef("Wall", "Block", "防御墙。适合新人从这里开始。"),
+    typeDef("Drill", "Block", "采矿方块。"),
+    typeDef("Conveyor", "Block", "物品运输方块。"),
+    typeDef("Router", "Block", "物品分配方块。"),
+    typeDef("Turret", "Block", "炮塔基础类型。"),
+    typeDef("Item", "UnlockableContent", "物品定义。"),
+    typeDef("Liquid", "UnlockableContent", "液体定义。"),
+    typeDef("UnitType", "UnlockableContent", "单位定义。"),
+    typeDef("StatusEffect", "Content", "状态效果。"),
+    typeDef("Weather", "Content", "天气效果。"),
+    typeDef("Planet", "Content", "星球定义。"),
+    typeDef("ItemStack", "", "物品和数量对象，常用于 requirements。"),
+    typeDef("Weapon", "", "单位武器对象。"),
+    typeDef("BulletType", "", "子弹对象。"),
+  ];
+
+  const LOCAL_FIELDS = {
+    Content: [
+      fieldDef("name", "String", "", "内部名称。通常由文件名决定，必要时也可显式填写。"),
+    ],
+    UnlockableContent: [
+      fieldDef("localizedName", "String", "", "游戏内显示名称。"),
+      fieldDef("description", "String", "", "鼠标悬停或数据库中显示的说明。"),
+      fieldDef("alwaysUnlocked", "Boolean", "false", "是否默认解锁。"),
+      fieldDef("research", "String", "", "科技树前置内容名称。", { accepts: ["Block", "Item", "Liquid", "UnitType"] }),
+    ],
+    Block: [
+      fieldDef("size", "Int", "1", "方块占地尺寸。1 表示 1x1。", { required: true }),
+      fieldDef("health", "Int", "100", "方块生命值。", { required: true }),
+      fieldDef("category", "String", "defense", "建造菜单分类，例如 defense、crafting、distribution。"),
+      fieldDef("requirements", "Array<ItemStack>", "", "建造消耗。使用数组元素添加物品和数量。", { accepts: ["ItemStack"] }),
+      fieldDef("buildVisibility", "String", "shown", "建造菜单可见性。"),
+      fieldDef("solid", "Boolean", "true", "是否为实体阻挡方块。"),
+      fieldDef("hasItems", "Boolean", "false", "是否存储物品。"),
+      fieldDef("hasLiquids", "Boolean", "false", "是否存储液体。"),
+      fieldDef("hasPower", "Boolean", "false", "是否接入电力。"),
+    ],
+    Wall: [
+      fieldDef("armor", "Float", "0", "额外护甲。"),
+      fieldDef("absorbLasers", "Boolean", "false", "是否吸收激光。"),
+      fieldDef("insulated", "Boolean", "false", "是否绝缘。"),
+    ],
+    Drill: [
+      fieldDef("drillTime", "Float", "280", "采矿所需时间。", { required: true }),
+      fieldDef("tier", "Int", "2", "可采矿物等级。"),
+      fieldDef("liquidBoostIntensity", "Float", "1.6", "液体加速倍率。"),
+      fieldDef("drawMineItem", "Boolean", "true", "是否绘制正在采集的矿物。"),
+    ],
+    Conveyor: [
+      fieldDef("speed", "Float", "0.08", "运输速度。", { required: true }),
+      fieldDef("displayedSpeed", "Float", "11", "UI 显示速度。"),
+      fieldDef("junctionReplacement", "String", "", "拖拽放置时替换为的交叉器。", { accepts: ["Block"] }),
+      fieldDef("bridgeReplacement", "String", "", "拖拽放置时替换为的桥。", { accepts: ["Block"] }),
+    ],
+    Router: [
+      fieldDef("speed", "Float", "8", "分发速度。"),
+      fieldDef("itemCapacity", "Int", "1", "物品容量。"),
+    ],
+    Turret: [
+      fieldDef("range", "Float", "160", "射程。", { required: true }),
+      fieldDef("reload", "Float", "45", "装填时间。"),
+      fieldDef("targetAir", "Boolean", "true", "是否攻击空中目标。"),
+      fieldDef("targetGround", "Boolean", "true", "是否攻击地面目标。"),
+      fieldDef("shootCone", "Float", "20", "射击角度容差。"),
+      fieldDef("inaccuracy", "Float", "0", "散布。"),
+      fieldDef("ammoTypes", "Object", "{}", "弹药到子弹的映射对象。复杂炮塔建议导入 JSON 后编辑。", { accepts: ["BulletType"] }),
+    ],
+    Item: [
+      fieldDef("color", "Color", "#d99d73", "物品颜色。"),
+      fieldDef("cost", "Float", "1", "建造成本倍率。"),
+      fieldDef("hardness", "Int", "1", "矿物硬度。"),
+      fieldDef("explosiveness", "Float", "0", "爆炸性。"),
+      fieldDef("flammability", "Float", "0", "易燃性。"),
+      fieldDef("radioactivity", "Float", "0", "放射性。"),
+      fieldDef("charge", "Float", "0", "电荷属性。"),
+    ],
+    Liquid: [
+      fieldDef("color", "Color", "#6ec7ff", "液体颜色。"),
+      fieldDef("temperature", "Float", "0.5", "温度。"),
+      fieldDef("viscosity", "Float", "0.5", "黏度。"),
+      fieldDef("heatCapacity", "Float", "0.5", "热容量。"),
+      fieldDef("flammability", "Float", "0", "易燃性。"),
+      fieldDef("explosiveness", "Float", "0", "爆炸性。"),
+    ],
+    UnitType: [
+      fieldDef("health", "Int", "360", "单位生命值。", { required: true }),
+      fieldDef("speed", "Float", "1.2", "移动速度。"),
+      fieldDef("armor", "Float", "0", "护甲。"),
+      fieldDef("flying", "Boolean", "false", "是否飞行。"),
+      fieldDef("itemCapacity", "Int", "0", "物品容量。"),
+      fieldDef("weapons", "Array<Weapon>", "", "武器列表。", { accepts: ["Weapon"] }),
+    ],
+    Weapon: [
+      fieldDef("name", "String", "weapon", "武器名称。"),
+      fieldDef("reload", "Float", "30", "装填时间。"),
+      fieldDef("x", "Float", "0", "挂点 X。"),
+      fieldDef("y", "Float", "0", "挂点 Y。"),
+      fieldDef("mirror", "Boolean", "true", "是否镜像。"),
+      fieldDef("bullet", "Object", "{}", "子弹对象。", { accepts: ["BulletType"] }),
+    ],
+    BulletType: [
+      fieldDef("damage", "Float", "20", "伤害。", { required: true }),
+      fieldDef("speed", "Float", "4", "子弹速度。"),
+      fieldDef("lifetime", "Float", "60", "存在时间。"),
+      fieldDef("width", "Float", "7", "宽度。"),
+      fieldDef("height", "Float", "9", "高度。"),
+      fieldDef("splashDamage", "Float", "0", "范围伤害。"),
+      fieldDef("splashDamageRadius", "Float", "0", "范围伤害半径。"),
+    ],
+    ItemStack: [
+      fieldDef("item", "String", "copper", "物品名称。", { required: true, accepts: ["Item"] }),
+      fieldDef("amount", "Int", "20", "数量。", { required: true }),
+    ],
+    StatusEffect: [
+      fieldDef("color", "Color", "#f2b95f", "状态颜色。"),
+      fieldDef("damage", "Float", "0", "每帧伤害。"),
+      fieldDef("speedMultiplier", "Float", "1", "速度倍率。"),
+      fieldDef("healthMultiplier", "Float", "1", "生命倍率。"),
+    ],
+    Weather: [
+      fieldDef("duration", "Float", "600", "持续时间。"),
+      fieldDef("opacityMultiplier", "Float", "1", "透明度倍率。"),
+      fieldDef("drawNoise", "Boolean", "true", "是否绘制噪声效果。"),
+    ],
+    Planet: [
+      fieldDef("radius", "Float", "1", "半径。"),
+      fieldDef("visible", "Boolean", "true", "是否可见。"),
+      fieldDef("atmosphereColor", "Color", "#74d3ff", "大气颜色。"),
+      fieldDef("startSector", "Int", "0", "起始区块。"),
+    ],
   };
 
   const state = {
-    api: null,
+    backend: null,
     project: null,
-    activeFileId: "manifest",
-    selectedNodeId: null,
     classes: [],
-    fieldSearch: "",
-    dockTab: "json",
-    canvasMode: "select",
-    zoom: 1,
-    panX: 0,
-    panY: 0,
+    fieldCache: new Map(),
+    fieldDetails: new Map(),
+    selectedId: "manifest",
+    activeAssetId: null,
+    view: "table",
+    filters: { kind: "all", asset: "", className: "" },
+    feedback: [],
     logs: [],
-    problems: [],
-    packageJob: null,
-    drag: null,
-    pan: null,
-    pendingConnection: null,
-    fieldMenuOwnerId: null,
+    backendExport: "",
+    syncTimers: new Map(),
+    mockClassId: 1,
   };
+
+  const dom = {};
 
   class BackendBridge {
     constructor() {
-      this.mode = "mock";
+      this.mode = "offline";
       this.socket = null;
-      this.url = "";
+      this.pending = [];
     }
 
     connect(url) {
-      this.url = url;
+      this.close();
       return new Promise((resolve, reject) => {
         if (!("WebSocket" in window)) {
           reject(new Error("当前浏览器不支持 WebSocket"));
@@ -183,86 +223,147 @@
         }
 
         const socket = new WebSocket(url);
-        const timeout = window.setTimeout(() => {
+        let settled = false;
+        const timer = window.setTimeout(() => {
           socket.close();
-          reject(new Error("连接超时，继续使用 Mock API"));
-        }, 1200);
+          finish(false, new Error("连接超时"));
+        }, 2500);
+
+        const finish = (ok, value) => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(timer);
+          ok ? resolve(value) : reject(value);
+        };
 
         socket.addEventListener("open", () => {
-          window.clearTimeout(timeout);
           this.socket = socket;
           this.mode = "ws";
-          resolve();
+          addLog("info", `已连接 ${url}`);
+          finish(true);
         });
 
-        socket.addEventListener("message", (event) => {
-          addLog("ws", `收到后端消息：${String(event.data).slice(0, 180)}`);
-        });
+        socket.addEventListener("message", (event) => this.handleMessage(event.data));
 
         socket.addEventListener("close", () => {
-          if (this.mode === "ws") addLog("ws", "后端连接已断开，回退到 Mock API");
-          this.mode = "mock";
+          if (this.mode === "ws") addLog("warning", "WebSocket 已断开，切换到离线目录");
+          this.mode = "offline";
           this.socket = null;
-          renderConnectionStatus();
+          this.rejectPending("WebSocket 已断开");
+          renderConnection();
         });
 
         socket.addEventListener("error", () => {
-          window.clearTimeout(timeout);
-          reject(new Error("无法连接后端，继续使用 Mock API"));
+          finish(false, new Error("无法连接后端"));
         });
       });
     }
 
+    close() {
+      if (this.socket) this.socket.close();
+      this.socket = null;
+      this.mode = "offline";
+      this.rejectPending("连接已关闭");
+    }
+
     request(wsType, payload) {
-      if (this.mode === "ws" && this.socket && this.socket.readyState === WebSocket.OPEN) {
-        this.socket.send(JSON.stringify({ wsType, content: JSON.stringify(payload || {}), out: false, dataList: {} }));
+      if (this.mode !== "ws" || !this.socket || this.socket.readyState !== WebSocket.OPEN) {
+        return Promise.resolve(mockRequest(wsType, payload || {}));
       }
-      return mockRequest(wsType, payload || {});
+
+      const packet = {
+        wsType,
+        content: JSON.stringify(payload || {}),
+        out: false,
+        dataList: {},
+      };
+
+      return new Promise((resolve, reject) => {
+        const item = {
+          wsType,
+          resolve,
+          reject,
+          timer: window.setTimeout(() => {
+            this.pending = this.pending.filter((entry) => entry !== item);
+            reject(new Error(`${wsType} 响应超时`));
+          }, REQUEST_TIMEOUT_MS),
+        };
+        this.pending.push(item);
+        this.socket.send(JSON.stringify(packet));
+      });
+    }
+
+    handleMessage(raw) {
+      const text = String(raw || "");
+      if (text.startsWith("Echo:")) return;
+
+      let packet;
+      try {
+        packet = JSON.parse(text);
+      } catch (_) {
+        addLog("warning", text.slice(0, 180));
+        return;
+      }
+
+      const index = this.pending.findIndex((item) => item.wsType === packet.wsType);
+      const item = index >= 0 ? this.pending.splice(index, 1)[0] : this.pending.shift();
+      if (!item) {
+        addLog("info", `${packet.wsType || "response"} ${text.slice(0, 180)}`);
+        return;
+      }
+
+      window.clearTimeout(item.timer);
+      item.resolve(decodeReply(packet));
+    }
+
+    rejectPending(message) {
+      this.pending.splice(0).forEach((item) => {
+        window.clearTimeout(item.timer);
+        item.reject(new Error(message));
+      });
     }
   }
 
-  function type(name, parentType, doc) {
+  function typeDef(name, parentType, doc) {
     return { name, parentType, doc };
   }
 
-  function field(name, fieldType, defaultValue, notes, required, accepts) {
-    return { name, type: fieldType, defaultValue, notes, required: Boolean(required), accepts: accepts || [] };
-  }
-
-  function mockRequest(wsType, payload) {
-    switch (wsType) {
-      case "Init":
-        return Promise.resolve({ Success: true, Doc_Count: TYPE_CATALOG.length, Message: "Mock docs loaded" });
-      case "AllClass":
-        return Promise.resolve({ Class_List: TYPE_CATALOG.map((item) => item.name) });
-      case "AllField":
-        return Promise.resolve({ Field_List: getFieldsForClass(payload.Class_Name).map((item) => item.name) });
-      case "PackageMod":
-        return Promise.resolve({ Success: true });
-      default:
-        return Promise.resolve({});
-    }
+  function fieldDef(name, type, defaultValue, doc, options) {
+    const opts = options || {};
+    return {
+      name,
+      type,
+      defaultValue: String(defaultValue ?? ""),
+      doc,
+      required: Boolean(opts.required),
+      accepts: opts.accepts || [],
+    };
   }
 
   function boot() {
-    state.api = new BackendBridge();
-    bindEvents();
-    createProject({
-      name: "visual-json-mod",
-      displayName: "Visual JSON Mod",
-      author: "MindustryMIT",
-      version: "1.0.0",
-      minGameVersion: "146",
-      description: "Created with the MindustryMIT visual JSON editor.",
-      starterKind: "blocks",
-    });
+    cacheDom();
+    state.backend = new BackendBridge();
+    state.project = loadProject() || createStarterProject();
+    state.activeAssetId = state.project.assets[0]?.id || null;
+    state.selectedId = state.activeAssetId ? state.project.assets[0].root.id : "manifest";
+    state.classes = getLocalClasses();
 
-    state.api.request("Init", { Data_Dir: "mock" }).then((result) => {
-      addLog("api", `初始化完成：${result.Message}，类型文档 ${result.Doc_Count} 个`);
-      return state.api.request("AllClass", {});
-    }).then((result) => {
-      state.classes = result.Class_List || TYPE_CATALOG.map((item) => item.name);
-      renderAll();
+    bindEvents();
+    hydrateProject(state.project);
+    populateStaticControls();
+    validateProject(false);
+    renderAll();
+  }
+
+  function cacheDom() {
+    [
+      "connectionState", "connectionForm", "wsUrl", "dataDir", "kindFilter", "assetSearch",
+      "assetList", "classCount", "classSearch", "classList", "activeTitle", "activePath",
+      "assetConfig", "fieldSelect", "editorBody", "selectionKind", "inspectorBody",
+      "livePreview", "problemCount", "feedbackList", "newDialog", "newContentForm",
+      "newKind", "newClassName", "fileInput", "toastRegion",
+    ].forEach((id) => {
+      dom[id] = document.getElementById(id);
     });
   }
 
@@ -271,1114 +372,1289 @@
     document.addEventListener("input", handleInput);
     document.addEventListener("change", handleChange);
     document.addEventListener("submit", handleSubmit);
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", stopPointerWork);
-
-    document.getElementById("nodeLayer").addEventListener("mousedown", startNodeDrag);
-    document.getElementById("canvasViewport").addEventListener("mousedown", startCanvasPan);
-    document.getElementById("projectFileInput").addEventListener("change", handleProjectFile);
+    dom.fileInput.addEventListener("change", handleFileImport);
   }
 
-  function startNodeDrag(event) {
-    const nodeElement = event.target.closest(".node");
-    if (!nodeElement) return;
-    if (event.target.closest("button,input,select,textarea,.pin")) return;
-
-    const file = getActiveFile();
-    const node = file && findNode(file, nodeElement.dataset.nodeId);
-    if (!node) return;
-
-    state.selectedNodeId = node.id;
-    state.fieldMenuOwnerId = null;
-    state.drag = {
-      nodeId: node.id,
-      startX: event.clientX,
-      startY: event.clientY,
-      x: node.x,
-      y: node.y,
-    };
-    renderCanvas();
-    renderInspector();
-    event.preventDefault();
-  }
-
-  function startCanvasPan(event) {
-    if (event.target.closest(".node") || event.target.closest("button,input,select,textarea")) return;
-    state.pan = {
-      startX: event.clientX,
-      startY: event.clientY,
-      x: state.panX,
-      y: state.panY,
-    };
-    state.fieldMenuOwnerId = null;
-    event.preventDefault();
-  }
-
-  function handleMouseMove(event) {
-    if (state.drag) {
-      const file = getActiveFile();
-      const node = file && findNode(file, state.drag.nodeId);
-      if (!node) return;
-      node.x = state.drag.x + (event.clientX - state.drag.startX) / state.zoom;
-      node.y = state.drag.y + (event.clientY - state.drag.startY) / state.zoom;
-      placeNode(node);
-      renderWires(file);
-      return;
-    }
-
-    if (state.pan) {
-      state.panX = state.pan.x + event.clientX - state.pan.startX;
-      state.panY = state.pan.y + event.clientY - state.pan.startY;
-      applyCanvasTransform();
-    }
-  }
-
-  function stopPointerWork() {
-    state.drag = null;
-    state.pan = null;
+  function populateStaticControls() {
+    dom.newKind.innerHTML = CONTENT_KINDS
+      .map(([value, label]) => `<option value="${esc(value)}">${esc(value)} · ${esc(label)}</option>`)
+      .join("");
+    populateClassSelect(dom.newClassName, DEFAULT_CLASS_BY_KIND.blocks);
   }
 
   function handleClick(event) {
-    const actionTarget = event.target.closest("[data-action]");
-    if (actionTarget) {
-      runAction(actionTarget.dataset.action, actionTarget);
+    const viewButton = event.target.closest("[data-view]");
+    if (viewButton) {
+      state.view = viewButton.dataset.view;
+      renderEditor();
+      renderViewTabs();
       return;
     }
 
-    const tabTarget = event.target.closest("[data-dock-tab]");
-    if (tabTarget) {
-      state.dockTab = tabTarget.dataset.dockTab;
-      renderDockTabs();
-      renderDock();
+    const assetButton = event.target.closest("[data-asset-id]");
+    if (assetButton) {
+      selectAsset(assetButton.dataset.assetId);
       return;
     }
 
-    const modeTarget = event.target.closest("[data-canvas-mode]");
-    if (modeTarget) {
-      state.canvasMode = modeTarget.dataset.canvasMode;
-      renderCanvasMode();
+    const row = event.target.closest("[data-select-id]");
+    if (row && !event.target.closest("input, select, textarea, button")) {
+      selectNode(row.dataset.selectId);
       return;
     }
 
-    const fileTarget = event.target.closest("[data-file-id]");
-    if (fileTarget) {
-      state.activeFileId = fileTarget.dataset.fileId;
-      state.selectedNodeId = getActiveFile()?.nodes[0]?.id || null;
-      state.fieldMenuOwnerId = null;
-      renderAll();
+    const classButton = event.target.closest("[data-class-name]");
+    if (classButton && !event.target.closest("[data-action]")) {
+      state.filters.className = classButton.dataset.className;
+      openNewDialog(classButton.dataset.className);
       return;
     }
 
-    const fieldTarget = event.target.closest("[data-field-name]");
-    if (fieldTarget) {
-      addFieldToActive(fieldTarget.dataset.fieldName, fieldTarget.dataset.ownerId);
-      return;
-    }
-
-    const nodeTarget = event.target.closest(".node");
-    if (nodeTarget) {
-      state.selectedNodeId = nodeTarget.dataset.nodeId;
-      state.fieldMenuOwnerId = null;
-      renderCanvas();
-      renderInspector();
-      renderFieldPalette();
-    }
+    const action = event.target.closest("[data-action]");
+    if (action) runAction(action.dataset.action, action);
   }
 
   function handleInput(event) {
     const target = event.target;
-    if (target.id === "fieldSearch") {
-      state.fieldSearch = target.value;
-      renderFieldPalette();
-      renderCanvas();
+
+    if (target.id === "assetSearch") {
+      state.filters.asset = target.value;
+      renderAssets();
       return;
     }
 
-    if (target.dataset.manifest && state.project) {
+    if (target.id === "classSearch") {
+      state.filters.className = target.value;
+      renderClasses();
+      return;
+    }
+
+    if (target.dataset.manifest) {
       state.project.manifest[target.dataset.manifest] = target.value;
-      renderProjectSummary();
-      renderDock();
+      if (target.dataset.manifest === "name") state.project.manifest.name = slugify(target.value);
+      validateProject(false);
+      renderAssets();
+      renderPreview();
+      renderFeedback();
       return;
     }
 
-    const file = getActiveFile();
-    if (!file) return;
-
-    if (target.dataset.fileProp) {
-      file[target.dataset.fileProp] = target.value;
-      if (target.dataset.fileProp === "name") file.path = `content/${file.kind}/${slugify(target.value)}.json`;
-      renderTree();
-      renderCanvas();
-      renderDock();
-      return;
-    }
-
-    if (target.dataset.instanceName) {
-      const node = getSelectedNode();
-      if (!node || node.kind !== "class") return;
-      node.instanceName = target.value;
-      if (node.role === "root") {
-        file.name = slugify(target.value);
-        file.path = `content/${file.kind}/${file.name}.json`;
-      }
-      renderTree();
-      renderCanvas();
-      renderDock();
+    if (target.dataset.assetFile) {
+      const asset = getActiveAsset();
+      if (!asset) return;
+      asset.fileName = slugify(target.value);
+      asset.root.instanceName = asset.fileName;
+      updateAssetPath(asset);
+      validateProject(false);
+      renderAssets();
+      renderHeader();
+      renderPreview();
+      renderFeedback();
       return;
     }
 
     if (target.dataset.fieldValue) {
-      const node = getSelectedNode();
-      if (!node || node.kind !== "field") return;
-      node.value = target.value;
-      renderCanvas();
-      renderDock();
+      updateFieldValue(target.dataset.fieldValue, target.value);
+      return;
+    }
+
+    if (target.dataset.elementValue) {
+      updateElementValue(target.dataset.elementValue, target.value);
     }
   }
 
   function handleChange(event) {
     const target = event.target;
-    if (target.id === "contentKind") {
-      document.getElementById("classPicker").value = CLASS_KINDS[target.value] || "Block";
+
+    if (target.id === "kindFilter") {
+      state.filters.kind = target.value;
+      renderAssets();
       return;
     }
 
-    const file = getActiveFile();
-    if (!file) return;
+    if (target.id === "newKind") {
+      populateClassSelect(dom.newClassName, DEFAULT_CLASS_BY_KIND[target.value] || "Block");
+      dom.newContentForm.elements.fileName.value = uniqueFileName(target.value, dom.newClassName.value);
+      return;
+    }
 
-    if (target.dataset.nodeClass) {
-      const node = findNode(file, target.dataset.nodeClass);
-      if (!node || node.kind !== "class") return;
-      node.className = target.value;
-      node.title = target.value;
-      if (node.role === "root") file.className = target.value;
-      removeInvalidFieldConnections(file, node.id);
+    if (target.id === "newClassName") {
+      const kind = kindForClass(target.value);
+      dom.newKind.value = kind;
+      dom.newContentForm.elements.fileName.value = uniqueFileName(kind, target.value);
+      return;
+    }
+
+    if (target.dataset.assetKind) {
+      const asset = getActiveAsset();
+      if (!asset) return;
+      asset.kind = target.value;
+      updateAssetPath(asset);
+      validateProject(false);
       renderAll();
       return;
     }
 
-    if (target.dataset.fileProp) {
-      file[target.dataset.fileProp] = target.value;
-      file.path = `content/${file.kind}/${slugify(file.name)}.json`;
-      renderAll();
+    if (target.dataset.assetClass) {
+      changeAssetClass(target.value);
       return;
     }
 
-    if (target.dataset.builtinKind) {
-      const node = findNode(file, target.dataset.builtinKind);
-      if (!node || node.kind !== "builtin") return;
-      const catalog = BUILTIN_INSTANCES[target.value];
-      node.builtinKind = target.value;
-      node.className = catalog.className;
-      node.value = catalog.values[0];
-      renderAll();
+    if (target.dataset.fieldValue) {
+      updateFieldValue(target.dataset.fieldValue, target.value);
       return;
     }
 
-    if (target.dataset.builtinValue) {
-      const node = findNode(file, target.dataset.builtinValue);
-      if (!node || node.kind !== "builtin") return;
-      node.value = target.value;
-      renderAll();
+    if (target.dataset.fieldBoolean) {
+      updateFieldValue(target.dataset.fieldBoolean, target.checked ? "true" : "false");
+      return;
+    }
+
+    if (target.dataset.elementValue) {
+      updateElementValue(target.dataset.elementValue, target.value);
     }
   }
 
   function handleSubmit(event) {
-    if (event.target.id === "projectForm") {
+    if (event.target.id === "connectionForm") {
       event.preventDefault();
-      createProject(Object.fromEntries(new FormData(event.target).entries()));
-      closeProjectModal();
-      renderAll();
+      connectBackend();
       return;
     }
 
-    if (event.target.id === "connectionForm") {
+    if (event.target.id === "newContentForm") {
       event.preventDefault();
-      const url = document.getElementById("wsUrl").value.trim();
-      addLog("ws", `尝试连接 ${url}`);
-      state.api.connect(url).then(() => {
-        addLog("ws", "WebSocket 已连接");
-        renderConnectionStatus();
-      }).catch((error) => {
-        addLog("ws", error.message);
-        renderConnectionStatus();
-      });
+      const form = new FormData(event.target);
+      const asset = createAsset(form.get("fileName"), form.get("kind"), form.get("className"));
+      state.project.assets.push(asset);
+      closeNewDialog();
+      selectAsset(asset.id);
+      ensureBackendClass(asset);
+      saveProject(false);
     }
-  }
-
-  function handleProjectFile(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const data = JSON.parse(String(reader.result));
-        if (data.project && Array.isArray(data.project.files)) {
-          state.project = migrateProject(data.project);
-          state.activeFileId = state.project.files[0]?.id || "manifest";
-          state.selectedNodeId = getActiveFile()?.nodes[0]?.id || null;
-          addLog("project", `已打开项目快照：${file.name}`);
-        } else {
-          importJsonAsContent(data, file.name);
-        }
-        renderAll();
-      } catch (error) {
-        addLog("error", `打开失败：${error.message}`);
-      } finally {
-        event.target.value = "";
-      }
-    };
-    reader.readAsText(file, "utf-8");
   }
 
   function runAction(action, target) {
     switch (action) {
-      case "new-project":
-        openProjectModal();
+      case "open-new-dialog":
+        openNewDialog(target.dataset.className);
         break;
-      case "close-project-modal":
-        closeProjectModal();
+      case "close-new-dialog":
+        closeNewDialog();
         break;
-      case "edit-manifest":
-        state.activeFileId = "manifest";
-        state.selectedNodeId = null;
-        renderAll();
-        break;
-      case "open-project":
-        document.getElementById("projectFileInput").click();
+      case "import-json":
+        dom.fileInput.click();
         break;
       case "save-project":
-        saveProject();
+        saveProject(true);
         break;
       case "validate-project":
-        validateProject();
-        state.dockTab = "problems";
+        validateProject(true);
+        state.view = "table";
         renderAll();
         break;
-      case "package-project":
-        packageProject();
-        break;
-      case "add-content-kind":
-        createContentFromPicker();
-        break;
-      case "add-class-node":
-        addClassNode();
-        break;
-      case "add-builtin-node":
-        addBuiltinNode();
-        break;
-      case "open-field-menu":
-        state.fieldMenuOwnerId = target.dataset.nodeId;
-        state.selectedNodeId = target.dataset.nodeId;
-        renderCanvas();
-        renderInspector();
-        renderFieldPalette();
-        break;
-      case "close-field-menu":
-        state.fieldMenuOwnerId = null;
-        renderCanvas();
-        break;
-      case "start-connection":
-        startConnection(target.dataset.nodeId);
-        break;
-      case "finish-connection":
-        finishConnection(target.dataset.nodeId);
-        break;
-      case "clear-connection":
-        clearSelectedConnection();
-        break;
-      case "create-class-for-field":
-        createClassForSelectedField();
-        break;
-      case "create-builtin-for-field":
-        createBuiltinForSelectedField();
-        break;
-      case "zoom-in":
-        state.zoom = Math.min(1.7, state.zoom + 0.1);
-        renderCanvas();
-        break;
-      case "zoom-out":
-        state.zoom = Math.max(0.6, state.zoom - 0.1);
-        renderCanvas();
-        break;
-      case "fit-canvas":
-        state.zoom = 1;
-        state.panX = 0;
-        state.panY = 0;
-        renderCanvas();
-        break;
-      case "delete-node":
-        deleteSelectedNode();
-        break;
-      case "delete-file":
-        deleteActiveFile();
-        break;
-      case "toggle-field-boolean":
-        toggleSelectedBoolean();
-        break;
-      case "download-snapshot":
-        downloadProjectSnapshot();
-        break;
-      case "download-json":
+      case "download-current":
         downloadCurrentJson();
         break;
-      case "download-package-plan":
-        downloadPackagePlan();
+      case "copy-current-json":
+        copyCurrentJson();
+        break;
+      case "select-manifest":
+        state.selectedId = "manifest";
+        renderAll();
+        break;
+      case "init-backend":
+        initBackend();
+        break;
+      case "add-selected-field":
+        addSelectedField();
+        break;
+      case "add-field-from-inspector":
+        addFieldFromInspector(target.dataset.fieldName);
+        break;
+      case "delete-asset":
+        deleteActiveAsset();
+        break;
+      case "delete-field":
+        deleteField(target.dataset.fieldId);
+        break;
+      case "reset-field":
+        resetField(target.dataset.fieldId);
+        break;
+      case "create-object":
+        createObjectForField(target.dataset.fieldId);
+        break;
+      case "clear-object":
+        clearObjectForField(target.dataset.fieldId);
+        break;
+      case "add-element-to-field":
+        addElementToField(target.dataset.fieldId);
+        break;
+      case "delete-element":
+        deleteElement(target.dataset.elementId);
+        break;
+      case "move-element-up":
+        moveElement(target.dataset.elementId, -1);
+        break;
+      case "move-element-down":
+        moveElement(target.dataset.elementId, 1);
+        break;
+      case "get-selected-value":
+        getSelectedValueFromBackend();
+        break;
+      case "export-from-backend":
+        exportFromBackend();
         break;
       default:
         break;
     }
   }
 
-  function createProject(data) {
-    const starterKind = data.starterKind || "blocks";
-    state.project = {
-      id: uid("project"),
+  function connectBackend() {
+    const url = dom.wsUrl.value.trim();
+    if (!url) return;
+    addLog("info", `连接 ${url}`);
+    state.backend.connect(url)
+      .then(() => {
+        renderConnection();
+        return refreshClassList();
+      })
+      .then(() => {
+        toast("WebSocket 已连接", "success");
+      })
+      .catch((error) => {
+        addLog("error", error.message);
+        toast(error.message, "error");
+        renderConnection();
+      });
+  }
+
+  function initBackend() {
+    const dataDir = dom.dataDir.value.trim();
+    callApi("Init", { Data_Dir: dataDir })
+      .then((reply) => {
+        addLog(reply.Success ? "info" : "warning", reply.Message || "Init 完成");
+        toast(reply.Message || "Init 完成", reply.Success ? "success" : "warning");
+        return refreshClassList();
+      })
+      .catch(showApiError);
+  }
+
+  function refreshClassList() {
+    return callApi("AllClass", {}).then((reply) => {
+      state.classes = unique([...getLocalClasses(), ...(reply.Class_List || [])]).sort(compareText);
+      renderClasses();
+      populateStaticControls();
+      renderFieldSelect();
+    });
+  }
+
+  function callApi(wsType, payload) {
+    return state.backend.request(wsType, payload || {}).catch((error) => {
+      addLog("error", `${wsType}: ${error.message}`);
+      throw error;
+    });
+  }
+
+  function mockRequest(wsType, payload) {
+    switch (wsType) {
+      case "Init":
+        return { Success: true, Doc_Count: LOCAL_TYPES.length, Message: "离线目录已就绪" };
+      case "AllClass":
+        return { Class_List: getLocalClasses() };
+      case "AllField":
+        return { Field_List: getFields(payload.Class_Name).map((field) => field.name) };
+      case "FieldDoc": {
+        const meta = getField(payload.Class_Name, payload.Field_Name);
+        return { Field_Doc: meta?.doc || "" };
+      }
+      case "FieldDefaultValue": {
+        const meta = getField(payload.Class_Name, payload.Field_Name);
+        return { Default_Value: meta?.defaultValue ?? "null" };
+      }
+      case "NewClass":
+        return { Class_Id: state.mockClassId++ };
+      case "SetFieldValue":
+        return { Success: true, Value: payload.Value || "", Message: "" };
+      case "GetFieldValue":
+        return { Success: true, Value: "", Message: "离线模式没有后端字段值" };
+      case "AddElement":
+        return { Success: true, Index: 0, Message: "" };
+      case "ExportClass":
+        return { Success: true, Content: JSON.stringify(getActiveJson(), null, 2), Message: "" };
+      case "RemoveClass":
+        return { Success: true };
+      default:
+        return {};
+    }
+  }
+
+  function decodeReply(packet) {
+    const shape = OUTPUT_TYPES[packet.wsType] || {};
+    const source = packet.dataList || {};
+    const result = {};
+    Object.entries(shape).forEach(([key, type]) => {
+      result[key] = decodeData(source[key], type);
+    });
+    return result;
+  }
+
+  function decodeData(data, type) {
+    if (!data) {
+      if (type === "list") return [];
+      if (type === "boolean") return false;
+      if (type === "int") return 0;
+      if (type === "float") return 0;
+      return "";
+    }
+    if (type === "list") return (data.list || []).map((item) => item.str || String(item.int || item.float || ""));
+    if (type === "boolean") return Boolean(data.boolean);
+    if (type === "int") return Number(data.int) || 0;
+    if (type === "float") return Number(data.float) || 0;
+    return data.str || "";
+  }
+
+  function createStarterProject() {
+    const project = {
+      version: 2,
       manifest: {
-        name: slugify(data.name || "visual-json-mod"),
-        displayName: data.displayName || "Visual JSON Mod",
-        author: data.author || "",
-        version: data.version || "1.0.0",
-        minGameVersion: data.minGameVersion || "146",
-        description: data.description || "",
+        name: "starter-json-mod",
+        displayName: "Starter JSON Mod",
+        author: "MindustryMIT",
+        version: "1.0.0",
+        minGameVersion: "146",
+        description: "Created with MindustryMIT JSON Editor.",
       },
-      files: [],
-      assets: { sprites: [], sounds: [], bundles: [] },
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      assets: [],
     };
-
-    const firstFile = createContentFile(starterKind, CLASS_KINDS[starterKind] || "Block", data.name || "sample-block");
-    state.activeFileId = firstFile.id;
-    state.selectedNodeId = firstFile.nodes[0].id;
-    validateProject();
+    const wall = createAsset("copper-wall", "blocks", "Wall");
+    addFieldByName(wall.root, "localizedName", "Copper Wall");
+    addFieldByName(wall.root, "description", "A simple starter wall.");
+    addFieldByName(wall.root, "size", "1");
+    addFieldByName(wall.root, "health", "320");
+    const requirements = addFieldByName(wall.root, "requirements", "");
+    addArrayElement(requirements, "ItemStack", { item: "copper", amount: "20" });
+    project.assets.push(wall);
+    return project;
   }
 
-  function createContentFromPicker() {
-    const kind = document.getElementById("contentKind").value;
-    const className = document.getElementById("classPicker").value || CLASS_KINDS[kind] || "Block";
-    const file = createContentFile(kind, className, `${state.project.manifest.name}-${kind}`);
-    state.activeFileId = file.id;
-    state.selectedNodeId = file.nodes[0].id;
-    addLog("project", `新增 ${file.path}`);
-    renderAll();
-  }
-
-  function createContentFile(kind, className, baseName) {
-    const name = uniqueFileName(kind, slugify(baseName || className));
-    const rootId = uid("node");
-    const file = {
-      id: uid("file"),
-      kind,
-      name,
-      className,
-      path: `content/${kind}/${name}.json`,
-      nodes: [
-        {
-          id: rootId,
-          kind: "class",
-          role: "root",
-          title: className,
-          className,
-          instanceName: name,
-          x: 460,
-          y: 140,
-        },
-      ],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+  function createAsset(fileName, kind, className) {
+    const assetKind = kind || kindForClass(className);
+    const cleanName = slugify(fileName || className || "content");
+    const root = createClassNode(className || DEFAULT_CLASS_BY_KIND[assetKind] || "Block", cleanName);
+    seedRecommendedFields(root);
+    const asset = {
+      id: uid("asset"),
+      kind: assetKind,
+      fileName: cleanName,
+      className: root.className,
+      classId: null,
+      root,
+      path: "",
     };
-    state.project.files.push(file);
-    addRequiredFields(file, rootId);
-    return file;
+    updateAssetPath(asset);
+    return asset;
   }
 
-  function addClassNode(className, x, y) {
-    const file = getActiveFile();
-    if (!file) return null;
-    const chosen = className || firstAcceptedClass(getSelectedNode()) || "Block";
-    const node = {
-      id: uid("node"),
+  function createClassNode(className, instanceName) {
+    return {
+      id: uid("class"),
       kind: "class",
-      role: "local",
-      title: chosen,
-      className: chosen,
-      instanceName: slugify(chosen),
-      x: x ?? 860,
-      y: y ?? 160 + file.nodes.filter((item) => item.kind === "class").length * 90,
+      className,
+      instanceName: instanceName || className,
+      fields: [],
     };
-    file.nodes.push(node);
-    state.selectedNodeId = node.id;
-    addLog("edit", `新增 Class 定义块 ${chosen}`);
-    renderAll();
-    return node;
   }
 
-  function addBuiltinNode(kind, x, y) {
-    const file = getActiveFile();
-    if (!file) return null;
-    const chosenKind = kind || "blocks";
-    const catalog = BUILTIN_INSTANCES[chosenKind];
-    const node = {
-      id: uid("node"),
-      kind: "builtin",
-      builtinKind: chosenKind,
-      className: catalog.className,
-      value: catalog.values[0],
-      x: x ?? 850,
-      y: y ?? 380 + file.nodes.filter((item) => item.kind === "builtin").length * 90,
+  function createField(meta, value) {
+    return {
+      id: uid("field"),
+      kind: "field",
+      name: meta.name,
+      type: meta.type || "String",
+      value: value ?? defaultFieldValue(meta),
+      doc: meta.doc || "",
+      defaultValue: meta.defaultValue ?? "",
+      required: Boolean(meta.required),
+      accepts: meta.accepts || [],
+      child: null,
+      elements: isArrayType(meta.type) ? [] : null,
     };
-    file.nodes.push(node);
-    state.selectedNodeId = node.id;
-    addLog("edit", `新增内置实例 ${chosenKind}/${node.value}`);
+  }
+
+  function createElement(value, className) {
+    if (className) {
+      const classNode = createClassNode(className, className);
+      seedRecommendedFields(classNode, true);
+      return { id: uid("element"), kind: "element", value: "", classNode };
+    }
+    return { id: uid("element"), kind: "element", value: String(value ?? ""), classNode: null };
+  }
+
+  function seedRecommendedFields(classNode, nested) {
+    const names = recommendedFieldNames(classNode.className, nested);
+    names.forEach((name) => addFieldByName(classNode, name));
+  }
+
+  function recommendedFieldNames(className, nested) {
+    if (className === "Wall") return ["localizedName", "description", "size", "health", "requirements"];
+    if (className === "Drill") return ["localizedName", "size", "health", "requirements", "drillTime", "tier"];
+    if (className === "Conveyor") return ["localizedName", "size", "health", "requirements", "speed"];
+    if (className === "Turret") return ["localizedName", "size", "health", "requirements", "range", "reload"];
+    if (className === "Item") return ["localizedName", "description", "color", "cost"];
+    if (className === "Liquid") return ["localizedName", "description", "color", "temperature"];
+    if (className === "UnitType") return ["localizedName", "description", "health", "speed", "weapons"];
+    if (className === "ItemStack") return ["item", "amount"];
+    if (className === "Weapon") return ["name", "reload", "x", "y", "bullet"];
+    if (className === "BulletType") return ["damage", "speed", "lifetime"];
+    if (nested) return [];
+    return ["localizedName", "description"];
+  }
+
+  function addFieldByName(classNode, fieldName, value) {
+    if (!classNode || classNode.fields.some((field) => field.name === fieldName)) return null;
+    const meta = getField(classNode.className, fieldName) || fieldDef(fieldName, "String", "", "后端字段。");
+    const field = createField(meta, value);
+    classNode.fields.push(field);
+    return field;
+  }
+
+  function addSelectedField() {
+    const asset = getActiveAsset();
+    if (!asset || !dom.fieldSelect.value) return;
+    const field = addFieldByName(asset.root, dom.fieldSelect.value);
+    if (!field) return;
+    state.selectedId = field.id;
+    syncField(field.id);
+    validateProject(false);
     renderAll();
-    return node;
   }
 
-  function addRequiredFields(file, ownerId) {
-    getFieldsForClass(findNode(file, ownerId)?.className || file.className)
-      .filter((item) => item.required)
-      .slice(0, 4)
-      .forEach((item) => addFieldNode(file, ownerId, item));
+  function addFieldFromInspector(fieldName) {
+    const selection = getSelection();
+    const classNode = selection?.kind === "class" ? selection.classNode : getActiveAsset()?.root;
+    if (!classNode || !fieldName) return;
+    const field = addFieldByName(classNode, fieldName);
+    if (!field) return;
+    state.selectedId = field.id;
+    syncField(field.id);
+    validateProject(false);
+    renderAll();
   }
 
-  function addFieldToActive(fieldName, explicitOwnerId) {
-    const file = getActiveFile();
-    if (!file) return;
-    const owner = getFieldOwner(file, explicitOwnerId);
-    if (!owner) return;
+  function updateFieldValue(fieldId, value) {
+    const selection = findSelection(fieldId);
+    if (!selection || selection.kind !== "field") return;
+    selection.field.value = value;
+    if (selection.field.child && !isObjectLike(selection.field)) selection.field.child = null;
+    validateProject(false);
+    scheduleSync(selection.field.id);
+    renderPreview();
+    renderFeedback();
+    renderInspector();
+  }
 
-    const existing = file.nodes.find((item) => item.kind === "field" && item.ownerId === owner.id && item.fieldName === fieldName);
-    if (existing) {
-      state.selectedNodeId = existing.id;
-      state.fieldMenuOwnerId = null;
-      renderCanvas();
-      renderInspector();
+  function updateElementValue(elementId, value) {
+    const selection = findSelection(elementId);
+    if (!selection || selection.kind !== "element") return;
+    selection.element.value = value;
+    validateProject(false);
+    syncField(selection.ownerField.id);
+    renderPreview();
+    renderFeedback();
+    renderInspector();
+  }
+
+  function scheduleSync(fieldId) {
+    window.clearTimeout(state.syncTimers.get(fieldId));
+    const timer = window.setTimeout(() => syncField(fieldId), SYNC_DELAY_MS);
+    state.syncTimers.set(fieldId, timer);
+  }
+
+  function syncField(fieldId) {
+    const selection = findSelection(fieldId);
+    const asset = getActiveAsset();
+    if (!asset || !selection || selection.kind !== "field") return;
+    ensureBackendClass(asset).then((classId) => {
+      const payload = {
+        Class_Id: classId,
+        Field_Path: selection.path,
+        Value: backendValue(selection.field),
+      };
+      return callApi("SetFieldValue", payload);
+    }).then((reply) => {
+      if (reply.Success === false) addLog("warning", reply.Message || "SetFieldValue 失败");
+    }).catch((error) => addLog("error", error.message));
+  }
+
+  function backendValue(field) {
+    if (field.child || field.elements) return "";
+    return String(field.value ?? "");
+  }
+
+  function ensureBackendClass(asset, force) {
+    if (!asset) return Promise.resolve(-1);
+    if (asset.classId != null && !force) return Promise.resolve(asset.classId);
+    return callApi("NewClass", { Class_Name: asset.root.className }).then((reply) => {
+      asset.classId = Number.isInteger(reply.Class_Id) ? reply.Class_Id : state.mockClassId++;
+      addLog("info", `NewClass ${asset.root.className} -> ${asset.classId}`);
+      renderHeader();
+      renderAssetConfig();
+      return asset.classId;
+    });
+  }
+
+  function addElementToField(fieldId) {
+    const selection = findSelection(fieldId);
+    const asset = getActiveAsset();
+    if (!asset || !selection || selection.kind !== "field") return;
+    const field = selection.field;
+    if (!field.elements) field.elements = [];
+    const select = document.getElementById(`elementType-${field.id}`);
+    const className = select?.value || acceptedClass(field);
+    const element = addArrayElement(field, className);
+    state.selectedId = element.id;
+    ensureBackendClass(asset)
+      .then((classId) => callApi("AddElement", {
+        Class_Id: classId,
+        Field_Path: selection.path,
+        Element_Type: className || "",
+        Value: element.classNode ? "" : String(element.value || ""),
+      }))
+      .then((reply) => {
+        if (reply.Success === false) addLog("warning", reply.Message || "AddElement 失败");
+      })
+      .catch((error) => addLog("error", error.message));
+    validateProject(false);
+    renderAll();
+  }
+
+  function addArrayElement(field, className, seedValues) {
+    const actualClass = className || acceptedClass(field);
+    const element = createElement("", actualClass);
+    if (seedValues && element.classNode) {
+      Object.entries(seedValues).forEach(([name, value]) => addFieldByName(element.classNode, name, value));
+    }
+    field.elements ||= [];
+    field.elements.push(element);
+    return element;
+  }
+
+  function createObjectForField(fieldId) {
+    const selection = findSelection(fieldId);
+    if (!selection || selection.kind !== "field") return;
+    const select = document.getElementById(`objectType-${fieldId}`);
+    const className = select?.value || acceptedClass(selection.field) || "BulletType";
+    selection.field.child = createClassNode(className, className);
+    seedRecommendedFields(selection.field.child, true);
+    selection.field.value = "";
+    state.selectedId = selection.field.child.id;
+    syncField(selection.field.id);
+    validateProject(false);
+    renderAll();
+  }
+
+  function clearObjectForField(fieldId) {
+    const selection = findSelection(fieldId);
+    if (!selection || selection.kind !== "field") return;
+    selection.field.child = null;
+    selection.field.value = selection.field.defaultValue || "{}";
+    state.selectedId = selection.field.id;
+    syncField(selection.field.id);
+    validateProject(false);
+    renderAll();
+  }
+
+  function deleteField(fieldId) {
+    const asset = getActiveAsset();
+    const selection = findSelection(fieldId);
+    if (!asset || !selection || selection.kind !== "field") return;
+    selection.owner.fields = selection.owner.fields.filter((field) => field.id !== fieldId);
+    state.selectedId = selection.owner.id;
+    validateProject(false);
+    renderAll();
+  }
+
+  function resetField(fieldId) {
+    const selection = findSelection(fieldId);
+    if (!selection || selection.kind !== "field") return;
+    selection.field.value = selection.field.defaultValue || defaultValueByType(selection.field.type);
+    selection.field.child = null;
+    selection.field.elements = isArrayType(selection.field.type) ? [] : null;
+    syncField(fieldId);
+    validateProject(false);
+    renderAll();
+  }
+
+  function deleteElement(elementId) {
+    const selection = findSelection(elementId);
+    if (!selection || selection.kind !== "element") return;
+    selection.ownerField.elements.splice(selection.index, 1);
+    state.selectedId = selection.ownerField.id;
+    syncField(selection.ownerField.id);
+    validateProject(false);
+    renderAll();
+  }
+
+  function moveElement(elementId, direction) {
+    const selection = findSelection(elementId);
+    if (!selection || selection.kind !== "element") return;
+    const list = selection.ownerField.elements;
+    const next = selection.index + direction;
+    if (next < 0 || next >= list.length) return;
+    [list[selection.index], list[next]] = [list[next], list[selection.index]];
+    syncField(selection.ownerField.id);
+    renderAll();
+  }
+
+  function changeAssetClass(className) {
+    const asset = getActiveAsset();
+    if (!asset || asset.root.className === className) return;
+    asset.className = className;
+    asset.kind = kindForClass(className);
+    asset.root = createClassNode(className, asset.fileName);
+    seedRecommendedFields(asset.root);
+    asset.classId = null;
+    updateAssetPath(asset);
+    state.selectedId = asset.root.id;
+    ensureBackendClass(asset, true);
+    validateProject(false);
+    renderAll();
+  }
+
+  function deleteActiveAsset() {
+    const asset = getActiveAsset();
+    if (!asset) return;
+    if (asset.classId != null) callApi("RemoveClass", { Class_Id: asset.classId }).catch(() => {});
+    state.project.assets = state.project.assets.filter((item) => item.id !== asset.id);
+    state.activeAssetId = state.project.assets[0]?.id || null;
+    state.selectedId = state.activeAssetId ? state.project.assets[0].root.id : "manifest";
+    validateProject(false);
+    renderAll();
+  }
+
+  function getSelectedValueFromBackend() {
+    const asset = getActiveAsset();
+    const selection = findSelection(state.selectedId);
+    if (!asset || !selection || !selection.path) {
+      toast("请选择字段或数组元素", "warning");
       return;
     }
-
-    const meta = getFieldsForClass(owner.className).find((item) => item.name === fieldName);
-    if (!meta) return;
-    const node = addFieldNode(file, owner.id, meta);
-    state.selectedNodeId = node.id;
-    state.fieldMenuOwnerId = null;
-    addLog("edit", `为 ${owner.className} 添加字段 ${fieldName}`);
-    renderAll();
+    ensureBackendClass(asset)
+      .then((classId) => callApi("GetFieldValue", { Class_Id: classId, Field_Path: selection.path }))
+      .then((reply) => {
+        addLog(reply.Success ? "info" : "warning", reply.Message || `Value: ${reply.Value}`);
+        if (reply.Value) toast(reply.Value, "success");
+      })
+      .catch(showApiError);
   }
 
-  function addFieldNode(file, ownerId, meta) {
-    const owner = findNode(file, ownerId);
-    const index = file.nodes.filter((item) => item.kind === "field" && item.ownerId === ownerId).length;
-    const node = {
-      id: uid("node"),
-      kind: "field",
-      ownerId,
-      fieldName: meta.name,
-      type: meta.type,
-      required: meta.required,
-      accepts: meta.accepts || [],
-      doc: meta.notes,
-      value: defaultValueForField(meta, file, owner),
-      connectionId: null,
-      x: (owner?.x || 460) - 320,
-      y: (owner?.y || 140) + 76 + index * 116,
-    };
-    file.nodes.push(node);
-    return node;
-  }
-
-  function defaultValueForField(meta, file, owner) {
-    if (meta.name === "name") return owner?.instanceName || file.name;
-    if (meta.name === "localizedName") return toTitle(owner?.instanceName || file.name);
-    return meta.defaultValue || "";
-  }
-
-  function getFieldOwner(file, explicitOwnerId) {
-    if (explicitOwnerId) return findNode(file, explicitOwnerId);
-    if (state.fieldMenuOwnerId) return findNode(file, state.fieldMenuOwnerId);
-    const selected = getSelectedNode();
-    if (selected?.kind === "class") return selected;
-    if (selected?.kind === "field") return findNode(file, selected.ownerId);
-    return file.nodes.find((item) => item.kind === "class" && item.role === "root");
-  }
-
-  function getFieldsForClass(className) {
-    const inherited = [];
-    const typeMeta = TYPE_CATALOG.find((item) => item.name === className);
-    if (typeMeta?.parentType && FIELD_CATALOG[typeMeta.parentType]) inherited.push(...FIELD_CATALOG[typeMeta.parentType]);
-    if (className !== "Block" && ["Wall", "Drill", "Conveyor", "Turret"].includes(className)) inherited.unshift(...FIELD_CATALOG.Block);
-    const own = FIELD_CATALOG[className] || [];
-    const seen = new Set();
-    return [...inherited, ...own].filter((item) => {
-      if (seen.has(item.name)) return false;
-      seen.add(item.name);
-      return true;
-    });
+  function exportFromBackend() {
+    const asset = getActiveAsset();
+    if (!asset) return;
+    ensureBackendClass(asset)
+      .then((classId) => callApi("ExportClass", { Class_Id: classId }))
+      .then((reply) => {
+        state.backendExport = reply.Content || "";
+        state.view = "backend";
+        renderAll();
+      })
+      .catch(showApiError);
   }
 
   function renderAll() {
-    renderConnectionStatus();
-    renderProjectSummary();
-    renderClassPicker();
-    renderTree();
-    renderFieldPalette();
-    renderCanvas();
+    renderConnection();
+    renderManifest();
+    renderAssets();
+    renderClasses();
+    renderHeader();
+    renderAssetConfig();
+    renderFieldSelect();
+    renderViewTabs();
+    renderEditor();
     renderInspector();
-    renderDockTabs();
-    renderDock();
+    renderPreview();
+    renderFeedback();
   }
 
-  function renderConnectionStatus() {
-    const label = document.getElementById("connectionStatus");
-    label.textContent = state.api?.mode === "ws" ? `已连接 ${state.api.url}` : "Mock API 就绪，等待 Java WS 接口";
+  function renderConnection() {
+    const online = state.backend?.mode === "ws";
+    dom.connectionState.textContent = online ? "后端已连接" : "离线模式";
+    dom.connectionState.className = online ? "online" : "";
   }
 
-  function renderProjectSummary() {
-    const subtitle = document.getElementById("projectSubtitle");
-    subtitle.textContent = state.project ? `${state.project.manifest.displayName} / ${state.project.files.length} 个 JSON` : "未加载";
-  }
-
-  function renderClassPicker() {
-    const picker = document.getElementById("classPicker");
-    const selected = picker.value || "Wall";
-    const classes = getClassNames();
-    picker.innerHTML = classes.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("");
-    picker.value = classes.includes(selected) ? selected : "Wall";
-  }
-
-  function renderTree() {
-    const tree = document.getElementById("resourceTree");
-    if (!state.project) {
-      tree.innerHTML = "";
-      return;
-    }
-
-    const groups = [
-      ["config", [{ id: "manifest", title: "mod.json", meta: "manifest" }]],
-      ...Object.keys(CLASS_KINDS).map((kind) => [
-        `content/${kind}`,
-        state.project.files.filter((file) => file.kind === kind).map((file) => ({ id: file.id, title: `${file.name}.json`, meta: file.className })),
-      ]),
-      ["assets/sprites", []],
-      ["assets/sounds", []],
-      ["bundles", []],
-    ];
-
-    tree.innerHTML = groups.map(([title, files]) => `
-      <div class="tree-folder">
-        <div class="tree-folder-header"><span>${escapeHtml(title)}</span><span>${files.length}</span></div>
-        <div class="tree-items">
-          ${files.length ? files.map((file) => `
-            <button type="button" class="tree-item ${state.activeFileId === file.id ? "is-active" : ""}" data-file-id="${escapeHtml(file.id)}">
-              <span class="tree-icon">${file.id === "manifest" ? "M" : "J"}</span>
-              <span class="tree-title">${escapeHtml(file.title)}</span>
-              <span class="tree-meta">${escapeHtml(file.meta)}</span>
-            </button>
-          `).join("") : `<div class="tree-item"><span class="tree-icon">-</span><span class="tree-title">空</span><span class="tree-meta">待添加</span></div>`}
-        </div>
-      </div>
-    `).join("");
-  }
-
-  function renderFieldPalette() {
-    const palette = document.getElementById("fieldPalette");
-    const count = document.getElementById("fieldCount");
-    const file = getActiveFile();
-    const owner = file && getFieldOwner(file);
-    if (!owner) {
-      count.textContent = "0";
-      palette.innerHTML = `<div class="field-card"><div><strong>选择 Class 块</strong><small>字段库会按选中的 Class 显示</small></div></div>`;
-      return;
-    }
-
-    const used = new Set(file.nodes.filter((item) => item.kind === "field" && item.ownerId === owner.id).map((item) => item.fieldName));
-    const fields = getFieldsForClass(owner.className).filter((item) => {
-      const text = `${item.name} ${item.type} ${item.notes}`.toLowerCase();
-      return text.includes(state.fieldSearch.trim().toLowerCase());
+  function renderManifest() {
+    Object.entries(state.project.manifest).forEach(([key, value]) => {
+      const input = document.querySelector(`[data-manifest="${key}"]`);
+      if (input && input !== document.activeElement) input.value = value;
     });
-    count.textContent = String(fields.length);
-    palette.innerHTML = fields.map((item) => `
-      <div class="field-card">
-        <div>
-          <strong>${escapeHtml(item.name)}</strong>
-          <small>${escapeHtml(item.type)}${item.required ? " / required" : ""}${canFieldConnect(item) ? " / connectable" : ""}</small>
-        </div>
-        <button type="button" class="icon-button ${used.has(item.name) ? "" : "accent"}" data-field-name="${escapeHtml(item.name)}" data-owner-id="${escapeHtml(owner.id)}" title="添加字段">
-          ${used.has(item.name) ? "go" : "+"}
+  }
+
+  function renderAssets() {
+    const assets = state.project.assets.filter((asset) => {
+      const kindOk = state.filters.kind === "all" || asset.kind === state.filters.kind;
+      const query = state.filters.asset.trim().toLowerCase();
+      const text = `${asset.fileName} ${asset.className} ${asset.path}`.toLowerCase();
+      return kindOk && (!query || text.includes(query));
+    });
+
+    dom.assetList.innerHTML = assets.length ? assets.map((asset) => `
+      <button type="button" class="asset-item ${asset.id === state.activeAssetId ? "is-active" : ""}" data-asset-id="${esc(asset.id)}">
+        <span class="kind-token ${esc(asset.kind)}">${esc(kindShort(asset.kind))}</span>
+        <span>
+          <strong>${esc(asset.fileName)}</strong>
+          <span>${esc(asset.className)} · ${esc(asset.path)}</span>
+        </span>
+        <span class="asset-count">${asset.root.fields.length}</span>
+      </button>
+    `).join("") : `<div class="empty-state"><strong>没有内容文件</strong><span>使用顶部的新建按钮创建第一个 JSON。</span></div>`;
+  }
+
+  function renderClasses() {
+    const query = state.filters.className.trim().toLowerCase();
+    const classes = getAllClasses().filter((className) => {
+      if (!query) return true;
+      const fields = getFields(className).map((field) => field.name).join(" ");
+      return `${className} ${fields}`.toLowerCase().includes(query);
+    });
+
+    dom.classCount.textContent = String(classes.length);
+    dom.classList.innerHTML = classes.map((className) => {
+      const meta = getType(className);
+      const fieldCount = getFields(className).length;
+      return `
+        <button type="button" class="class-item" data-class-name="${esc(className)}">
+          <span>
+            <strong>${esc(className)}</strong>
+            <span>${esc(meta?.parentType || "root")} · ${fieldCount} fields</span>
+          </span>
+          <span class="badge">新建</span>
         </button>
-      </div>
-    `).join("");
+      `;
+    }).join("");
   }
 
-  function renderCanvas() {
-    const layer = document.getElementById("nodeLayer");
-    applyCanvasTransform();
-    document.getElementById("zoomLabel").textContent = `${Math.round(state.zoom * 100)}%`;
+  function renderHeader() {
+    const asset = getActiveAsset();
+    if (!asset) {
+      dom.activeTitle.textContent = "mod.json";
+      dom.activePath.textContent = "项目清单";
+      return;
+    }
+    dom.activeTitle.textContent = asset.fileName;
+    dom.activePath.textContent = `${asset.path}${asset.classId != null ? ` · Class_Id ${asset.classId}` : ""}`;
+  }
 
-    const file = getActiveFile();
-    if (!file) {
-      layer.innerHTML = `<div class="empty-canvas"><strong>mod.json</strong>这里编辑项目清单。选择 content JSON 后会显示 Class/Field 蓝图。</div>`;
-      document.getElementById("wireLayer").innerHTML = "";
+  function renderAssetConfig() {
+    const asset = getActiveAsset();
+    if (!asset) {
+      dom.assetConfig.innerHTML = `
+        <label><span>当前</span><input value="mod.json" disabled></label>
+        <label><span>类型</span><input value="项目清单" disabled></label>
+      `;
       return;
     }
 
-    layer.innerHTML = file.nodes.map((node) => renderNode(file, node)).join("") + renderFieldMenu(file);
-    renderWires(file);
-  }
-
-  function renderNode(file, node) {
-    if (node.kind === "class") return renderClassNode(file, node);
-    if (node.kind === "builtin") return renderBuiltinNode(node);
-    return renderFieldNode(file, node);
-  }
-
-  function renderClassNode(file, node) {
-    const selected = node.id === state.selectedNodeId ? "is-selected" : "";
-    const fieldCount = file.nodes.filter((item) => item.kind === "field" && item.ownerId === node.id).length;
-    const waiting = state.pendingConnection ? "is-connect-target" : "";
-    return `
-      <article class="node class-node ${node.role === "root" ? "root" : "local"} ${selected} ${waiting}" data-node-id="${escapeHtml(node.id)}" style="left:${node.x}px;top:${node.y}px">
-        <button type="button" class="class-add" data-action="open-field-menu" data-node-id="${escapeHtml(node.id)}" title="添加 Field">+</button>
-        <button type="button" class="pin in" data-action="finish-connection" data-node-id="${escapeHtml(node.id)}" title="连接到这个 Class"></button>
-        <div class="node-header">
-          <span class="node-kind">C</span>
-          <div class="node-title">
-            <strong>${escapeHtml(node.className)}</strong>
-            <small>${node.role === "root" ? escapeHtml(file.path) : "local class definition"}</small>
-          </div>
-        </div>
-        <div class="node-body">
-          <div class="node-row"><span>instance</span><span class="node-value">${escapeHtml(node.instanceName || node.className)}</span></div>
-          <div class="node-row"><span>fields</span><span class="node-value">${fieldCount}</span></div>
-          <div class="node-row"><span>accepts</span><span class="node-value">${escapeHtml(node.className)}</span></div>
-        </div>
-      </article>
-    `;
-  }
-
-  function renderBuiltinNode(node) {
-    const selected = node.id === state.selectedNodeId ? "is-selected" : "";
-    return `
-      <article class="node builtin-node ${selected}" data-node-id="${escapeHtml(node.id)}" style="left:${node.x}px;top:${node.y}px">
-        <button type="button" class="pin in" data-action="finish-connection" data-node-id="${escapeHtml(node.id)}" title="连接到这个内置实例"></button>
-        <div class="node-header">
-          <span class="node-kind">B</span>
-          <div class="node-title">
-            <strong>${escapeHtml(node.value)}</strong>
-            <small>built-in ${escapeHtml(node.builtinKind)}</small>
-          </div>
-        </div>
-        <div class="node-body">
-          <div class="node-row"><span>type</span><span class="node-value">${escapeHtml(node.className)}</span></div>
-          <div class="node-row"><span>value</span><span class="node-value">${escapeHtml(node.value)}</span></div>
-        </div>
-      </article>
-    `;
-  }
-
-  function renderFieldNode(file, node) {
-    const selected = node.id === state.selectedNodeId ? "is-selected" : "";
-    const connected = node.connectionId ? findNode(file, node.connectionId) : null;
-    const connectable = canFieldConnect(node);
-    return `
-      <article class="node field-node ${selected} ${state.pendingConnection?.fieldId === node.id ? "is-connecting" : ""}" data-node-id="${escapeHtml(node.id)}" style="left:${node.x}px;top:${node.y}px">
-        ${connectable ? `<button type="button" class="pin out" data-action="start-connection" data-node-id="${escapeHtml(node.id)}" title="从 Field 连接到 Class / 内置实例"></button>` : ""}
-        <div class="node-header">
-          <span class="node-kind">F</span>
-          <div class="node-title">
-            <strong>${escapeHtml(node.fieldName)}</strong>
-            <small>${escapeHtml(node.type)}${node.required ? " / required" : ""}</small>
-          </div>
-        </div>
-        <div class="node-body">
-          <div class="node-row"><span>value</span><span class="node-value">${escapeHtml(formatValue(node.value))}</span></div>
-          <div class="node-row"><span>source</span><span class="node-value">${connected ? escapeHtml(nodeLabel(connected)) : "literal"}</span></div>
-        </div>
-      </article>
-    `;
-  }
-
-  function renderFieldMenu(file) {
-    const owner = state.fieldMenuOwnerId && findNode(file, state.fieldMenuOwnerId);
-    if (!owner || owner.kind !== "class") return "";
-    const used = new Set(file.nodes.filter((item) => item.kind === "field" && item.ownerId === owner.id).map((item) => item.fieldName));
-    const fields = getFieldsForClass(owner.className).filter((item) => !used.has(item.name));
-    return `
-      <div class="field-menu" style="left:${owner.x - 286}px;top:${owner.y + 18}px">
-        <div class="field-menu-header">
-          <strong>${escapeHtml(owner.className)} Fields</strong>
-          <button type="button" class="icon-button" data-action="close-field-menu">x</button>
-        </div>
-        <div class="field-menu-list">
-          ${fields.length ? fields.map((item) => `
-            <button type="button" data-field-name="${escapeHtml(item.name)}" data-owner-id="${escapeHtml(owner.id)}">
-              <span>${escapeHtml(item.name)}</span><small>${escapeHtml(item.type)}</small>
-            </button>
-          `).join("") : `<span class="field-menu-empty">没有可添加字段</span>`}
-        </div>
+    dom.assetConfig.innerHTML = `
+      <label>
+        <span>目录</span>
+        <select data-asset-kind="true">${CONTENT_KINDS.map(([value, label]) =>
+          `<option value="${esc(value)}" ${asset.kind === value ? "selected" : ""}>${esc(value)} · ${esc(label)}</option>`
+        ).join("")}</select>
+      </label>
+      <label>
+        <span>文件名</span>
+        <input data-asset-file="true" value="${esc(asset.fileName)}" autocomplete="off">
+      </label>
+      <label>
+        <span>类</span>
+        <select data-asset-class="true">${classOptions(asset.root.className)}</select>
+      </label>
+      <label>
+        <span>路径</span>
+        <input value="${esc(asset.path)}" disabled>
+      </label>
+      <div class="asset-actions">
+        <button type="button" class="btn danger" data-action="delete-asset">删除</button>
       </div>
     `;
   }
 
-  function renderWires(file) {
-    const wireLayer = document.getElementById("wireLayer");
-    const ownershipWires = file.nodes
-      .filter((node) => node.kind === "field" && node.ownerId)
-      .map((fieldNode) => {
-        const owner = findNode(file, fieldNode.ownerId);
-        if (!owner) return "";
-        const sx = owner.x;
-        const sy = owner.y + 43;
-        const tx = fieldNode.x + NODE_WIDTH;
-        const ty = fieldNode.y + 43;
-        const dx = Math.max(70, Math.abs(tx - sx) * 0.4);
-        const d = `M ${sx} ${sy} C ${sx - dx} ${sy}, ${tx + dx} ${ty}, ${tx} ${ty}`;
-        return `<path class="wire-shadow owner" d="${d}"></path><path class="wire owner" d="${d}"></path>`;
-      });
-
-    const valueWires = file.nodes
-      .filter((node) => node.kind === "field" && node.connectionId)
-      .map((fieldNode) => {
-        const target = findNode(file, fieldNode.connectionId);
-        if (!target) return "";
-        const sx = fieldNode.x + NODE_WIDTH;
-        const sy = fieldNode.y + 43;
-        const tx = target.x;
-        const ty = target.y + 43;
-        const dx = Math.max(90, Math.abs(tx - sx) * 0.45);
-        const d = `M ${sx} ${sy} C ${sx + dx} ${sy}, ${tx - dx} ${ty}, ${tx} ${ty}`;
-        const invalid = isConnectionCompatible(fieldNode, target) ? "" : " invalid";
-        return `<path class="wire-shadow${invalid}" d="${d}"></path><path class="wire${invalid}" d="${d}"></path>`;
-      });
-    wireLayer.innerHTML = ownershipWires.join("") + valueWires.join("");
+  function renderFieldSelect() {
+    const asset = getActiveAsset();
+    if (!asset) {
+      dom.fieldSelect.innerHTML = `<option value="">请选择内容文件</option>`;
+      dom.fieldSelect.disabled = true;
+      return;
+    }
+    dom.fieldSelect.disabled = false;
+    const existing = new Set(asset.root.fields.map((field) => field.name));
+    const fields = getFields(asset.root.className).filter((field) => !existing.has(field.name));
+    dom.fieldSelect.innerHTML = fields.length
+      ? fields.map((field) => `<option value="${esc(field.name)}">${esc(field.name)} · ${esc(field.type)}</option>`).join("")
+      : `<option value="">字段已全部添加</option>`;
   }
 
-  function renderCanvasMode() {
-    document.querySelectorAll("[data-canvas-mode]").forEach((button) => {
-      button.classList.toggle("is-active", button.dataset.canvasMode === state.canvasMode);
+  function renderViewTabs() {
+    document.querySelectorAll("[data-view]").forEach((button) => {
+      button.classList.toggle("is-active", button.dataset.view === state.view);
     });
+  }
+
+  function renderEditor() {
+    if (state.view === "json") {
+      dom.editorBody.innerHTML = `<pre class="json-preview">${esc(JSON.stringify(getActiveJson(), null, 2))}</pre>`;
+      return;
+    }
+
+    if (state.view === "backend") {
+      dom.editorBody.innerHTML = `
+        <div class="backend-tools">
+          <button type="button" class="btn primary" data-action="export-from-backend">ExportClass</button>
+          <button type="button" class="btn" data-action="get-selected-value">GetFieldValue</button>
+        </div>
+        <pre class="backend-preview">${esc(state.backendExport || "尚未从后端导出。")}</pre>
+      `;
+      return;
+    }
+
+    const asset = getActiveAsset();
+    if (!asset) {
+      renderManifestTable();
+      return;
+    }
+
+    const rows = [];
+    rows.push(renderObjectRow(asset.root, [], 0));
+    asset.root.fields.forEach((field) => appendFieldRows(rows, field, asset.root, [field.name], 0));
+
+    dom.editorBody.innerHTML = `
+      <div class="field-table-wrap">
+        <table class="field-table">
+          <thead>
+            <tr>
+              <th>字段</th>
+              <th>路径</th>
+              <th>值</th>
+              <th>默认</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>${rows.join("")}</tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function renderManifestTable() {
+    const manifest = manifestJson();
+    const rows = Object.entries(manifest).map(([key, value]) => `
+      <tr class="${state.selectedId === "manifest" ? "is-selected" : ""}" data-select-id="manifest">
+        <td class="field-name"><strong>${esc(key)}</strong><span>mod.json</span></td>
+        <td class="path-cell">${esc(key)}</td>
+        <td class="value-cell">${esc(value)}</td>
+        <td></td>
+        <td></td>
+      </tr>
+    `).join("");
+    dom.editorBody.innerHTML = `
+      <div class="field-table-wrap">
+        <table class="field-table">
+          <thead><tr><th>字段</th><th>路径</th><th>值</th><th>默认</th><th>操作</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function renderObjectRow(classNode, path, depth) {
+    return `
+      <tr class="object-row ${state.selectedId === classNode.id ? "is-selected" : ""} indent-${Math.min(depth, 3)}" data-select-id="${esc(classNode.id)}">
+        <td class="field-name">
+          <strong>${esc(classNode.className)}</strong>
+          <span>${depth === 0 ? "root object" : "nested object"}</span>
+        </td>
+        <td class="path-cell">${esc(path.join(" / ") || "(root)")}</td>
+        <td class="value-cell"><span class="type-pill">object</span></td>
+        <td></td>
+        <td class="row-actions"></td>
+      </tr>
+    `;
+  }
+
+  function appendFieldRows(rows, field, owner, path, depth) {
+    rows.push(renderFieldRow(field, owner, path, depth));
+    if (field.child) {
+      rows.push(renderObjectRow(field.child, path, depth + 1));
+      field.child.fields.forEach((child) => appendFieldRows(rows, child, field.child, path.concat(child.name), depth + 1));
+    }
+    if (field.elements) {
+      field.elements.forEach((element, index) => {
+        const elementPath = path.concat(`#${index}`);
+        rows.push(renderElementRow(element, field, index, elementPath, depth + 1));
+        if (element.classNode) {
+          rows.push(renderObjectRow(element.classNode, elementPath, depth + 2));
+          element.classNode.fields.forEach((child) => appendFieldRows(rows, child, element.classNode, elementPath.concat(child.name), depth + 2));
+        }
+      });
+    }
+  }
+
+  function renderFieldRow(field, owner, path, depth) {
+    const selected = state.selectedId === field.id ? "is-selected" : "";
+    return `
+      <tr class="field-row ${selected} indent-${Math.min(depth, 3)}" data-select-id="${esc(field.id)}">
+        <td class="field-name">
+          <strong>${esc(field.name)}</strong>
+          <span class="field-badges">
+            <span class="type-pill">${esc(field.type)}</span>
+            ${field.required ? `<span class="type-pill required-pill">required</span>` : ""}
+          </span>
+        </td>
+        <td class="path-cell" title="${esc(path.join(" / "))}">${esc(path.join(" / "))}</td>
+        <td class="value-cell">${renderValueEditor(field)}</td>
+        <td class="path-cell">${esc(field.defaultValue || "")}</td>
+        <td class="row-actions">${renderFieldActions(field)}</td>
+      </tr>
+    `;
+  }
+
+  function renderValueEditor(field) {
+    if (field.child) return `<span class="type-pill">${esc(field.child.className)} object</span>`;
+    if (field.elements) return `<span class="type-pill">${field.elements.length} elements</span>`;
+    if (field.type === "Boolean") {
+      return `<input type="checkbox" data-field-boolean="${esc(field.id)}" ${String(field.value).toLowerCase() === "true" ? "checked" : ""}>`;
+    }
+    if (field.type === "Color") {
+      return `<input type="color" data-field-value="${esc(field.id)}" value="${esc(normalizeColor(field.value))}">`;
+    }
+    if (field.type === "String" && field.accepts.length) {
+      return `<input data-field-value="${esc(field.id)}" value="${esc(field.value)}" list="contentNameHints" autocomplete="off">`;
+    }
+    return `<input data-field-value="${esc(field.id)}" value="${esc(field.value)}" autocomplete="off">`;
+  }
+
+  function renderFieldActions(field) {
+    if (field.elements) {
+      const options = elementClassOptions(field);
+      return `
+        <select id="elementType-${esc(field.id)}" class="inline-select">${options}</select>
+        <button type="button" class="icon-btn accent" data-action="add-element-to-field" data-field-id="${esc(field.id)}" title="添加数组元素">+</button>
+        <button type="button" class="icon-btn" data-action="reset-field" data-field-id="${esc(field.id)}" title="重置">↺</button>
+        <button type="button" class="icon-btn danger" data-action="delete-field" data-field-id="${esc(field.id)}" title="删除字段">×</button>
+      `;
+    }
+    if (isObjectLike(field)) {
+      const options = objectClassOptions(field);
+      return field.child
+        ? `
+          <button type="button" class="icon-btn" data-action="clear-object" data-field-id="${esc(field.id)}" title="清空对象">清</button>
+          <button type="button" class="icon-btn" data-action="reset-field" data-field-id="${esc(field.id)}" title="重置">↺</button>
+          <button type="button" class="icon-btn danger" data-action="delete-field" data-field-id="${esc(field.id)}" title="删除字段">×</button>
+        `
+        : `
+          <select id="objectType-${esc(field.id)}" class="inline-select">${options}</select>
+          <button type="button" class="icon-btn accent" data-action="create-object" data-field-id="${esc(field.id)}" title="创建对象">+</button>
+          <button type="button" class="icon-btn" data-action="reset-field" data-field-id="${esc(field.id)}" title="重置">↺</button>
+          <button type="button" class="icon-btn danger" data-action="delete-field" data-field-id="${esc(field.id)}" title="删除字段">×</button>
+        `;
+    }
+    return `
+      <button type="button" class="icon-btn" data-action="reset-field" data-field-id="${esc(field.id)}" title="重置">↺</button>
+      <button type="button" class="icon-btn danger" data-action="delete-field" data-field-id="${esc(field.id)}" title="删除字段">×</button>
+    `;
+  }
+
+  function renderElementRow(element, ownerField, index, path, depth) {
+    const selected = state.selectedId === element.id ? "is-selected" : "";
+    const value = element.classNode
+      ? `<span class="type-pill">${esc(element.classNode.className)}</span>`
+      : `<input data-element-value="${esc(element.id)}" value="${esc(element.value)}" autocomplete="off">`;
+    return `
+      <tr class="element-row ${selected} indent-${Math.min(depth, 3)}" data-select-id="${esc(element.id)}">
+        <td class="field-name"><strong>#${index}</strong><span>${esc(ownerField.name)} element</span></td>
+        <td class="path-cell">${esc(path.join(" / "))}</td>
+        <td class="value-cell">${value}</td>
+        <td></td>
+        <td class="row-actions">
+          <button type="button" class="icon-btn" data-action="move-element-up" data-element-id="${esc(element.id)}" title="上移">↑</button>
+          <button type="button" class="icon-btn" data-action="move-element-down" data-element-id="${esc(element.id)}" title="下移">↓</button>
+          <button type="button" class="icon-btn danger" data-action="delete-element" data-element-id="${esc(element.id)}" title="删除元素">×</button>
+        </td>
+      </tr>
+    `;
   }
 
   function renderInspector() {
-    const body = document.getElementById("inspectorBody");
-    const subtitle = document.getElementById("selectionSubtitle");
-    const badge = document.getElementById("activeFileBadge");
-    const file = getActiveFile();
-
-    if (!state.project) {
-      subtitle.textContent = "未加载项目";
-      badge.textContent = "-";
-      body.innerHTML = "";
+    const selection = getSelection();
+    dom.selectionKind.textContent = selection?.kind || "none";
+    if (!selection) {
+      dom.inspectorBody.innerHTML = `<div class="empty-state"><strong>未选择</strong><span>点击表格行查看文档和字段信息。</span></div>`;
       return;
     }
 
-    if (!file) {
-      subtitle.textContent = "项目清单";
-      badge.textContent = "mod.json";
-      body.innerHTML = renderManifestInspector();
+    if (selection.kind === "manifest") {
+      dom.inspectorBody.innerHTML = `
+        <div class="doc-block">
+          <div class="doc-card"><h3>mod.json</h3><p>项目清单会导出为模组根目录的 mod.json。</p></div>
+          <div class="doc-card"><h3>文件数</h3><p>${state.project.assets.length} 个内容 JSON。</p></div>
+        </div>
+      `;
       return;
     }
 
-    const node = getSelectedNode() || file.nodes[0];
-    state.selectedNodeId = node?.id || null;
-    badge.textContent = `${file.name}.json`;
-
-    if (node.kind === "class") {
-      subtitle.textContent = node.role === "root" ? "主 Class 定义" : "局部 Class 定义";
-      body.innerHTML = renderClassInspector(file, node);
-    } else if (node.kind === "builtin") {
-      subtitle.textContent = "内置实例";
-      body.innerHTML = renderBuiltinInspector(node);
-    } else {
-      subtitle.textContent = `字段 ${node.fieldName}`;
-      body.innerHTML = renderFieldInspector(file, node);
-    }
-  }
-
-  function renderManifestInspector() {
-    const manifest = state.project.manifest;
-    return `
-      <section class="property-group">
-        <h3>mod.json</h3>
-        ${textControl("内部名称", "name", manifest.name, "manifest")}
-        ${textControl("显示名称", "displayName", manifest.displayName, "manifest")}
-        ${textControl("作者", "author", manifest.author, "manifest")}
-        ${textControl("版本", "version", manifest.version, "manifest")}
-        ${textControl("最低游戏版本", "minGameVersion", manifest.minGameVersion, "manifest")}
-        <div class="property-control"><label>说明</label><textarea data-manifest="description" rows="4">${escapeHtml(manifest.description)}</textarea></div>
-      </section>
-      <section class="property-group">
-        <h3>项目操作</h3>
-        <button type="button" class="tool-button" data-action="download-snapshot">导出项目快照</button>
-      </section>
-    `;
-  }
-
-  function renderClassInspector(file, node) {
-    const classes = getClassNames().map((name) => `<option value="${escapeHtml(name)}" ${name === node.className ? "selected" : ""}>${escapeHtml(name)}</option>`).join("");
-    return `
-      <section class="property-group">
-        <h3>Class Definition</h3>
-        <div class="property-control"><label>Class 类型</label><select data-node-class="${escapeHtml(node.id)}">${classes}</select></div>
-        ${textControl("实例名称", node.id, node.instanceName || node.className, "instanceName")}
-        ${node.role === "root" ? `
-          ${textControl("文件名", "name", file.name, "fileProp")}
-          <div class="property-control"><label>内容目录</label><select data-file-prop="kind">
-            ${Object.keys(CLASS_KINDS).map((kind) => `<option value="${kind}" ${kind === file.kind ? "selected" : ""}>${kind}</option>`).join("")}
-          </select></div>
-        ` : ""}
-        <div class="field-doc">${escapeHtml(TYPE_CATALOG.find((item) => item.name === node.className)?.doc || "")}</div>
-      </section>
-      <section class="property-group">
-        <h3>操作</h3>
-        <button type="button" class="tool-button" data-action="open-field-menu" data-node-id="${escapeHtml(node.id)}">添加 Field</button>
-        <button type="button" class="tool-button" data-action="add-class-node">新建 Class 块</button>
-        <button type="button" class="tool-button" data-action="add-builtin-node">新建内置实例</button>
-        ${node.role === "root" ? `<button type="button" class="tool-button danger" data-action="delete-file">删除当前 JSON</button>` : `<button type="button" class="tool-button danger" data-action="delete-node">删除 Class 块</button>`}
-      </section>
-    `;
-  }
-
-  function renderBuiltinInspector(node) {
-    return `
-      <section class="property-group">
-        <h3>Built-in Instance</h3>
-        <div class="property-control"><label>目录</label><select data-builtin-kind="${escapeHtml(node.id)}">
-          ${Object.keys(BUILTIN_INSTANCES).map((kind) => `<option value="${kind}" ${kind === node.builtinKind ? "selected" : ""}>${kind}</option>`).join("")}
-        </select></div>
-        <div class="property-control"><label>实例</label><select data-builtin-value="${escapeHtml(node.id)}">
-          ${BUILTIN_INSTANCES[node.builtinKind].values.map((value) => `<option value="${escapeHtml(value)}" ${value === node.value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}
-        </select></div>
-        <div class="property-control"><label>输出类型</label><input value="${escapeHtml(node.className)}" readonly></div>
-      </section>
-      <section class="property-group">
-        <h3>操作</h3>
-        <button type="button" class="tool-button danger" data-action="delete-node">删除内置实例</button>
-      </section>
-    `;
-  }
-
-  function renderFieldInspector(file, node) {
-    const connected = node.connectionId ? findNode(file, node.connectionId) : null;
-    const connectable = canFieldConnect(node);
-    return `
-      <section class="property-group">
-        <h3>Field</h3>
-        <div class="property-control"><label>字段名</label><input value="${escapeHtml(node.fieldName)}" readonly></div>
-        <div class="property-control"><label>字段类型</label><input value="${escapeHtml(node.type)}" readonly></div>
-        <div class="property-control"><label>允许连接</label><input value="${escapeHtml(acceptedTypes(node).join(", ") || "literal only")}" readonly></div>
-        <div class="field-doc">${escapeHtml(node.doc || "")}</div>
-      </section>
-      <section class="property-group">
-        <h3>值</h3>
-        ${renderValueEditor(node)}
-      </section>
-      <section class="property-group">
-        <h3>连接</h3>
-        <div class="field-doc">${connected ? `已连接到 ${escapeHtml(nodeLabel(connected))}` : connectable ? "点击字段块右侧圆点，再点击 Class / 内置实例左侧圆点。" : "这个字段是字面量，不需要连接。"}</div>
-        ${connectable ? `
-          <button type="button" class="tool-button" data-action="create-class-for-field">新建 Class 并连接</button>
-          <button type="button" class="tool-button" data-action="create-builtin-for-field">新建内置实例并连接</button>
-          <button type="button" class="tool-button" data-action="clear-connection">断开连接</button>
-        ` : ""}
-      </section>
-      <section class="property-group">
-        <h3>节点操作</h3>
-        <button type="button" class="tool-button danger" data-action="delete-node">删除 Field</button>
-      </section>
-    `;
-  }
-
-  function renderValueEditor(node) {
-    if (node.type === "Boolean") {
-      return `<div class="toggle-row"><span>${node.value === "true" ? "true" : "false"}</span><button type="button" class="toggle ${node.value === "true" ? "is-on" : ""}" data-action="toggle-field-boolean" aria-label="切换布尔值"></button></div>`;
-    }
-    if (["Int", "Float"].includes(node.type)) {
-      return `<div class="property-control"><label>数值</label><input type="number" step="${node.type === "Int" ? "1" : "0.01"}" value="${escapeHtml(node.value)}" data-field-value="value"></div>`;
-    }
-    if (node.type === "Color") {
-      const color = /^#[0-9a-f]{6}$/i.test(node.value) ? node.value : "#42d190";
-      return `<div class="property-control"><label>颜色</label><input type="color" value="${escapeHtml(color)}" data-field-value="value"></div><div class="property-control"><label>颜色文本</label><input value="${escapeHtml(node.value)}" data-field-value="value"></div>`;
-    }
-    if (node.type.startsWith("Array") || node.type === "Object") {
-      return `<div class="property-control"><label>${node.type === "Object" ? "对象 JSON" : "数组，每行或逗号分隔一项"}</label><textarea rows="5" data-field-value="value">${escapeHtml(node.value)}</textarea></div>`;
-    }
-    return `<div class="property-control"><label>文本</label><input value="${escapeHtml(node.value)}" data-field-value="value"></div>`;
-  }
-
-  function textControl(label, key, value, kind) {
-    const attr = kind === "manifest" ? `data-manifest="${key}"` : kind === "instanceName" ? `data-instance-name="${key}"` : `data-file-prop="${key}"`;
-    return `<div class="property-control"><label>${escapeHtml(label)}</label><input value="${escapeHtml(value || "")}" ${attr}></div>`;
-  }
-
-  function startConnection(fieldId) {
-    const file = getActiveFile();
-    const node = file && findNode(file, fieldId);
-    if (!node || node.kind !== "field" || !canFieldConnect(node)) return;
-    state.pendingConnection = { fieldId };
-    state.selectedNodeId = fieldId;
-    addLog("connect", `选择目标 Class / 内置实例：${node.fieldName}`);
-    renderAll();
-  }
-
-  function finishConnection(targetId) {
-    const file = getActiveFile();
-    if (!file || !state.pendingConnection) return;
-    const fieldNode = findNode(file, state.pendingConnection.fieldId);
-    const target = findNode(file, targetId);
-    if (!fieldNode || !target || !["class", "builtin"].includes(target.kind)) return;
-
-    if (!isConnectionCompatible(fieldNode, target)) {
-      const message = `${fieldNode.fieldName}(${fieldNode.type}) 不能连接到 ${nodeLabel(target)}(${target.className})`;
-      addLog("connect", message);
-      state.problems.push(problem("error", "canvas", message));
-      state.pendingConnection = null;
-      renderAll();
+    if (selection.kind === "class") {
+      const meta = getType(selection.classNode.className);
+      const available = getFields(selection.classNode.className)
+        .filter((field) => !selection.classNode.fields.some((item) => item.name === field.name))
+        .slice(0, 8);
+      dom.inspectorBody.innerHTML = `
+        <div class="doc-block">
+          <div class="doc-card">
+            <h3>${esc(selection.classNode.className)}</h3>
+            <p>${esc(meta?.doc || "后端类。")}</p>
+          </div>
+          <div class="doc-card">
+            <h3>可添加字段</h3>
+            ${available.length ? available.map((field) => `
+              <div class="field-option-line">
+                <span>${esc(field.name)} · ${esc(field.type)}</span>
+                <button type="button" class="icon-btn accent" data-action="add-field-from-inspector" data-field-name="${esc(field.name)}">+</button>
+              </div>
+            `).join("") : `<p>没有更多字段。</p>`}
+          </div>
+        </div>
+      `;
       return;
     }
 
-    fieldNode.connectionId = target.id;
-    state.pendingConnection = null;
-    state.selectedNodeId = fieldNode.id;
-    addLog("connect", `${fieldNode.fieldName} 已连接到 ${nodeLabel(target)}`);
-    renderAll();
-  }
-
-  function clearSelectedConnection() {
-    const node = getSelectedNode();
-    if (!node || node.kind !== "field") return;
-    node.connectionId = null;
-    state.pendingConnection = null;
-    renderAll();
-  }
-
-  function createClassForSelectedField() {
-    const fieldNode = getSelectedNode();
-    const file = getActiveFile();
-    if (!fieldNode || fieldNode.kind !== "field" || !file) return;
-    const className = firstAcceptedClass(fieldNode) || "Block";
-    const node = addClassNode(className, fieldNode.x + 380, fieldNode.y - 8);
-    if (node && isConnectionCompatible(fieldNode, node)) fieldNode.connectionId = node.id;
-    state.selectedNodeId = fieldNode.id;
-    renderAll();
-  }
-
-  function createBuiltinForSelectedField() {
-    const fieldNode = getSelectedNode();
-    const file = getActiveFile();
-    if (!fieldNode || fieldNode.kind !== "field" || !file) return;
-    const builtinKind = firstAcceptedBuiltinKind(fieldNode) || "blocks";
-    const node = addBuiltinNode(builtinKind, fieldNode.x + 380, fieldNode.y - 8);
-    if (node && isConnectionCompatible(fieldNode, node)) fieldNode.connectionId = node.id;
-    state.selectedNodeId = fieldNode.id;
-    renderAll();
-  }
-
-  function canFieldConnect(node) {
-    return acceptedTypes(node).length > 0;
-  }
-
-  function acceptedTypes(node) {
-    if (!node) return [];
-    if (node.accepts?.length) return node.accepts;
-    if (node.type === "Object" || node.type === "Array<Object>") return ["Object"];
-    if (node.type === "Array<ItemStack>") return ["Item"];
-    if (getClassNames().includes(node.type)) return [node.type];
-    return [];
-  }
-
-  function isConnectionCompatible(fieldNode, target) {
-    if (!fieldNode || !target || !canFieldConnect(fieldNode)) return false;
-    const accepts = acceptedTypes(fieldNode);
-    if (accepts.includes("Object")) return target.kind === "class";
-    return accepts.some((accepted) => typeExtends(target.className, accepted));
-  }
-
-  function typeExtends(candidate, expected) {
-    if (candidate === expected) return true;
-    let current = TYPE_CATALOG.find((item) => item.name === candidate);
-    while (current?.parentType) {
-      if (current.parentType === expected) return true;
-      current = TYPE_CATALOG.find((item) => item.name === current.parentType);
-    }
-    return false;
-  }
-
-  function firstAcceptedClass(fieldNode) {
-    const accepts = acceptedTypes(fieldNode);
-    if (accepts.includes("Object")) return "Block";
-    return accepts.find((name) => getClassNames().includes(name)) || null;
-  }
-
-  function firstAcceptedBuiltinKind(fieldNode) {
-    const accepts = acceptedTypes(fieldNode);
-    return Object.entries(BUILTIN_INSTANCES).find(([, meta]) => accepts.some((accepted) => typeExtends(meta.className, accepted)))?.[0] || null;
-  }
-
-  function removeInvalidFieldConnections(file, ownerId) {
-    file.nodes.filter((node) => node.kind === "field" && node.ownerId === ownerId).forEach((node) => {
-      const target = node.connectionId && findNode(file, node.connectionId);
-      if (target && !isConnectionCompatible(node, target)) node.connectionId = null;
-    });
-  }
-
-  function renderDockTabs() {
-    document.querySelectorAll("[data-dock-tab]").forEach((button) => {
-      button.classList.toggle("is-active", button.dataset.dockTab === state.dockTab);
-    });
-  }
-
-  function renderDock() {
-    const body = document.getElementById("dockBody");
-    if (state.dockTab === "json") {
-      body.innerHTML = `<pre class="code-preview">${escapeHtml(JSON.stringify(getActiveJson(), null, 2))}</pre>`;
+    if (selection.kind === "field") {
+      const field = selection.field;
+      loadFieldDetails(selection.owner.className, field.name);
+      dom.inspectorBody.innerHTML = `
+        <div class="doc-block">
+          <div class="doc-card">
+            <h3>${esc(field.name)}</h3>
+            <p>${esc(field.doc || "暂无字段说明。")}</p>
+          </div>
+          <div class="doc-card">
+            <h3>类型</h3>
+            <p>${esc(field.type)}${field.required ? " · required" : ""}</p>
+          </div>
+          <div class="doc-card">
+            <h3>默认值</h3>
+            <p>${esc(field.defaultValue || "null")}</p>
+          </div>
+          <div class="doc-card">
+            <h3>Field_Path</h3>
+            <p>${esc(JSON.stringify(selection.path))}</p>
+          </div>
+        </div>
+      `;
       return;
     }
 
-    if (state.dockTab === "problems") {
-      const problems = state.problems.length ? state.problems : [{ level: "ok", scope: "project", message: "当前没有发现问题。" }];
-      body.innerHTML = `<ul class="problem-list">${problems.map((item) => `<li class="problem-item ${escapeHtml(item.level)}"><strong>${escapeHtml(item.level)}</strong><span>${escapeHtml(item.scope)}：${escapeHtml(item.message)}</span></li>`).join("")}</ul>`;
-      return;
+    if (selection.kind === "element") {
+      dom.inspectorBody.innerHTML = `
+        <div class="doc-block">
+          <div class="doc-card"><h3>数组元素 #${selection.index}</h3><p>${esc(selection.ownerField.name)} 的第 ${selection.index + 1} 个元素。</p></div>
+          <div class="doc-card"><h3>Field_Path</h3><p>${esc(JSON.stringify(selection.path))}</p></div>
+        </div>
+      `;
     }
-
-    if (state.dockTab === "logs") {
-      body.innerHTML = `<ul class="log-list">${state.logs.slice(-80).reverse().map((item) => `<li class="log-item"><strong>${escapeHtml(item.level)}</strong><span>${escapeHtml(item.message)} <small>${escapeHtml(item.time)}</small></span></li>`).join("")}</ul>`;
-      return;
-    }
-
-    body.innerHTML = renderPackageDock();
   }
 
-  function renderPackageDock() {
-    const plan = getPackagePlan();
-    const steps = state.packageJob?.steps || [
-      { name: "校验项目", status: "pending" },
-      { name: "生成 mod.json", status: "pending" },
-      { name: "写入 content JSON", status: "pending" },
-      { name: "复制资源目录", status: "pending" },
-      { name: "请求后端 zip 打包", status: "pending" },
-    ];
-    return `
-      <div class="package-toolbar">
-        <button type="button" class="tool-button primary" data-action="package-project">执行打包流程</button>
-        <button type="button" class="tool-button" data-action="download-package-plan">导出打包清单</button>
-        <span class="pill">${plan.fileCount} 个文件</span>
+  function renderPreview() {
+    dom.livePreview.textContent = JSON.stringify(getActiveJson(), null, 2);
+  }
+
+  function renderFeedback() {
+    const items = [...state.feedback, ...state.logs.slice(-6).reverse()];
+    dom.problemCount.textContent = String(state.feedback.length);
+    dom.feedbackList.innerHTML = items.length ? items.map((item) => `
+      <div class="feedback-item ${esc(item.level || "info")}">
+        <strong>${esc(item.level || "info")}</strong>
+        <p>${esc(item.message)}</p>
       </div>
-      <ul class="package-list" style="margin-top:10px">
-        ${steps.map((item) => `<li class="package-item ${item.status === "done" ? "done" : ""}"><strong>${escapeHtml(item.status)}</strong><span>${escapeHtml(item.name)} <small>${escapeHtml(item.note || "")}</small></span></li>`).join("")}
-      </ul>
-    `;
+    `).join("") : `<div class="feedback-item ok"><strong>OK</strong><p>当前项目未发现明显问题。</p></div>`;
+  }
+
+  function selectAsset(assetId) {
+    state.activeAssetId = assetId;
+    const asset = getActiveAsset();
+    state.selectedId = asset ? asset.root.id : "manifest";
+    ensureFieldsForClass(asset?.root.className);
+    renderAll();
+  }
+
+  function selectNode(id) {
+    state.selectedId = id;
+    renderEditor();
+    renderInspector();
+  }
+
+  function openNewDialog(className) {
+    const selectedClass = className || dom.newClassName.value || DEFAULT_CLASS_BY_KIND.blocks;
+    populateClassSelect(dom.newClassName, selectedClass);
+    const kind = kindForClass(selectedClass);
+    dom.newKind.value = kind;
+    dom.newContentForm.elements.fileName.value = uniqueFileName(kind, selectedClass);
+    dom.newDialog.classList.remove("hidden");
+  }
+
+  function closeNewDialog() {
+    dom.newDialog.classList.add("hidden");
+  }
+
+  function populateClassSelect(select, selected) {
+    select.innerHTML = classOptions(selected);
+    select.value = selected && getAllClasses().includes(selected) ? selected : select.options[0]?.value || "Block";
+  }
+
+  function classOptions(selected) {
+    return getAllClasses().map((className) =>
+      `<option value="${esc(className)}" ${className === selected ? "selected" : ""}>${esc(className)}</option>`
+    ).join("");
+  }
+
+  function elementClassOptions(field) {
+    const accepted = field.accepts.length ? field.accepts : [acceptedClass(field)].filter(Boolean);
+    const classes = accepted.length ? accepted : getAllClasses();
+    return classes.map((className) => `<option value="${esc(className)}">${esc(className)}</option>`).join("");
+  }
+
+  function objectClassOptions(field) {
+    const classes = field.accepts.length ? field.accepts : [acceptedClass(field), "BulletType", "Weapon", "ItemStack"].filter(Boolean);
+    return unique(classes).map((className) => `<option value="${esc(className)}">${esc(className)}</option>`).join("");
+  }
+
+  function loadFieldDetails(className, fieldName) {
+    const key = `${className}.${fieldName}`;
+    if (state.fieldDetails.has(key)) return;
+    state.fieldDetails.set(key, true);
+    Promise.all([
+      callApi("FieldDoc", { Class_Name: className, Field_Name: fieldName }),
+      callApi("FieldDefaultValue", { Class_Name: className, Field_Name: fieldName }),
+    ]).then(([docReply, defaultReply]) => {
+      const field = getField(className, fieldName);
+      if (field) {
+        if (docReply.Field_Doc) field.doc = docReply.Field_Doc;
+        if (defaultReply.Default_Value && defaultReply.Default_Value !== "null") field.defaultValue = defaultReply.Default_Value;
+      }
+      const selection = getSelection();
+      if (selection?.kind === "field" && selection.field.name === fieldName) renderInspector();
+    }).catch(() => {});
+  }
+
+  function ensureFieldsForClass(className) {
+    if (!className || state.fieldCache.has(className)) return Promise.resolve(getFields(className));
+    return callApi("AllField", { Class_Name: className }).then((reply) => {
+      const local = getFields(className);
+      const byName = new Map(local.map((field) => [field.name, field]));
+      (reply.Field_List || []).forEach((name) => {
+        if (!byName.has(name)) byName.set(name, fieldDef(name, "String", "", "后端字段。"));
+      });
+      state.fieldCache.set(className, Array.from(byName.values()));
+      renderFieldSelect();
+      return state.fieldCache.get(className);
+    }).catch(() => getFields(className));
+  }
+
+  function validateProject(showToast) {
+    const problems = [];
+    const manifest = state.project.manifest;
+    if (!manifest.name) problems.push(problem("error", "mod.json 缺少 name"));
+    if (manifest.name && !/^[a-z0-9._-]+$/.test(manifest.name)) {
+      problems.push(problem("error", "mod.json name 只能使用小写字母、数字、点、下划线和短横线"));
+    }
+    if (!manifest.displayName) problems.push(problem("warning", "mod.json 建议填写 displayName"));
+
+    const paths = new Set();
+    state.project.assets.forEach((asset) => {
+      if (paths.has(asset.path)) problems.push(problem("error", `${asset.path} 路径重复`));
+      paths.add(asset.path);
+      validateClass(asset.root, asset.path, problems);
+    });
+
+    state.feedback = problems;
+    if (showToast) toast(problems.length ? `发现 ${problems.length} 个问题` : "检查通过", problems.length ? "warning" : "success");
+    return problems;
+  }
+
+  function validateClass(classNode, scope, problems) {
+    getFields(classNode.className).filter((field) => field.required).forEach((meta) => {
+      const node = classNode.fields.find((field) => field.name === meta.name);
+      if (!node) problems.push(problem("warning", `${scope} 建议填写 ${meta.name}`));
+      else if (!node.child && !node.elements && String(node.value || "").trim() === "") {
+        problems.push(problem("warning", `${scope} 的 ${node.name} 为空`));
+      }
+    });
+
+    classNode.fields.forEach((field) => {
+      if ((field.type === "Int" || field.type === "Float" || field.type === "Double") && Number.isNaN(Number(field.value))) {
+        problems.push(problem("error", `${scope} 的 ${field.name} 需要是数字`));
+      }
+      if (field.child) validateClass(field.child, `${scope}/${field.name}`, problems);
+      if (field.elements) {
+        field.elements.forEach((element, index) => {
+          if (element.classNode) validateClass(element.classNode, `${scope}/${field.name}#${index}`, problems);
+        });
+      }
+    });
+  }
+
+  function problem(level, message) {
+    return { level, message };
+  }
+
+  function getSelection() {
+    if (state.selectedId === "manifest") return { kind: "manifest" };
+    const asset = getActiveAsset();
+    if (!asset) return null;
+    return findInClass(asset.root, state.selectedId, [], null);
+  }
+
+  function findSelection(id) {
+    if (id === "manifest") return { kind: "manifest" };
+    const asset = getActiveAsset();
+    return asset ? findInClass(asset.root, id, [], null) : null;
+  }
+
+  function findInClass(classNode, id, path, ownerField) {
+    if (!classNode) return null;
+    if (classNode.id === id) return { kind: "class", classNode, path, ownerField };
+    for (const field of classNode.fields) {
+      const fieldPath = path.concat(field.name);
+      if (field.id === id) return { kind: "field", field, owner: classNode, path: fieldPath };
+      if (field.child) {
+        const child = findInClass(field.child, id, fieldPath, field);
+        if (child) return child;
+      }
+      if (field.elements) {
+        for (let index = 0; index < field.elements.length; index += 1) {
+          const element = field.elements[index];
+          const elementPath = fieldPath.concat(`#${index}`);
+          if (element.id === id) return { kind: "element", element, ownerField: field, index, path: elementPath };
+          if (element.classNode) {
+            const child = findInClass(element.classNode, id, elementPath, field);
+            if (child) return child;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  function getActiveAsset() {
+    return state.project.assets.find((asset) => asset.id === state.activeAssetId) || null;
   }
 
   function getActiveJson() {
-    if (!state.project) return {};
-    if (state.activeFileId === "manifest") return getManifestJson();
-    const file = getActiveFile();
-    return file ? buildJsonForFile(file) : getManifestJson();
+    const asset = getActiveAsset();
+    return asset ? buildClassJson(asset.root) : manifestJson();
   }
 
-  function getManifestJson() {
+  function manifestJson() {
     const manifest = state.project.manifest;
     return {
       name: manifest.name,
@@ -1390,139 +1666,171 @@
     };
   }
 
-  function buildJsonForFile(file) {
-    const root = file.nodes.find((node) => node.kind === "class" && node.role === "root");
-    return root ? buildClassJson(file, root) : {};
-  }
-
-  function buildClassJson(file, classNode) {
-    const json = { type: classNode.className };
-    file.nodes.filter((node) => node.kind === "field" && node.ownerId === classNode.id).forEach((node) => {
-      json[node.fieldName] = coerceValue(file, node);
+  function buildClassJson(classNode) {
+    const result = { type: classNode.className };
+    classNode.fields.forEach((field) => {
+      result[field.name] = buildFieldValue(field);
     });
-    return json;
+    return result;
   }
 
-  function coerceValue(file, node) {
-    const connected = node.connectionId ? findNode(file, node.connectionId) : null;
-    if (connected) {
-      if (connected.kind === "builtin") return connectedValueForField(node, connected);
-      if (connected.kind === "class") {
-        const nested = buildClassJson(file, connected);
-        return node.type.startsWith("Array") ? [nested] : nested;
+  function buildFieldValue(field) {
+    if (field.child) return buildClassJson(field.child);
+    if (field.elements) return field.elements.map((element) => element.classNode ? buildClassJson(element.classNode) : coerceValue(element.value, elementType(field.type)));
+    return coerceValue(field.value, field.type);
+  }
+
+  function coerceValue(value, type) {
+    const text = String(value ?? "").trim();
+    if (type === "Boolean") return text.toLowerCase() === "true";
+    if (type === "Int") return Number.parseInt(text || "0", 10) || 0;
+    if (type === "Float" || type === "Double") return Number.parseFloat(text || "0") || 0;
+    if (type === "Object") {
+      try {
+        return JSON.parse(text || "{}");
+      } catch (_) {
+        return {};
       }
     }
-
-    const value = String(node.value || "").trim();
-    if (node.type === "Boolean") return value === "true";
-    if (node.type === "Int") return Number.parseInt(value || "0", 10);
-    if (node.type === "Float") return Number.parseFloat(value || "0");
-    if (node.type === "Object") {
-      try { return JSON.parse(value || "{}"); } catch (_) { return {}; }
-    }
-    if (node.type.startsWith("Array")) {
-      return value.split(/\n|,/).map((item) => item.trim()).filter(Boolean).map((item) => {
-        if (node.type === "Array<ItemStack>" && item.includes("/")) {
-          const [name, amount] = item.split("/");
-          return { item: name.trim(), amount: Number.parseInt(amount, 10) || 0 };
-        }
-        return item;
-      });
-    }
-    return value;
+    return text;
   }
 
-  function connectedValueForField(fieldNode, builtinNode) {
-    if (fieldNode.type === "Array<ItemStack>") return [{ item: builtinNode.value, amount: 1 }];
-    if (fieldNode.type.startsWith("Array")) return [builtinNode.value];
-    return builtinNode.value;
-  }
-
-  function validateProject() {
-    const problems = [];
-    if (!state.project) return problems;
-    const manifest = state.project.manifest;
-    if (!manifest.name) problems.push(problem("error", "mod.json", "缺少 name。"));
-    if (!/^[a-z0-9._-]+$/.test(manifest.name)) problems.push(problem("error", "mod.json", "name 只能包含小写字母、数字、点、下划线和短横线。"));
-
-    const paths = new Set();
-    state.project.files.forEach((file) => {
-      if (paths.has(file.path)) problems.push(problem("error", file.path, "文件路径重复。"));
-      paths.add(file.path);
-
-      file.nodes.filter((node) => node.kind === "class").forEach((classNode) => {
-        const fields = file.nodes.filter((node) => node.kind === "field" && node.ownerId === classNode.id);
-        getFieldsForClass(classNode.className).filter((item) => item.required).forEach((requiredField) => {
-          const node = fields.find((item) => item.fieldName === requiredField.name);
-          if (!node || String(node.value || "").trim() === "") problems.push(problem("warning", file.path, `${classNode.className} 建议填写 ${requiredField.name}。`));
-        });
-      });
-
-      file.nodes.filter((node) => node.kind === "field").forEach((node) => {
-        if (node.connectionId) {
-          const target = findNode(file, node.connectionId);
-          if (!target || !isConnectionCompatible(node, target)) problems.push(problem("error", file.path, `${node.fieldName} 连接类型不匹配。`));
-        }
-        if (["Int", "Float"].includes(node.type) && Number.isNaN(Number(node.value))) problems.push(problem("error", file.path, `${node.fieldName} 需要是数字。`));
-        if (node.type === "Object" && !node.connectionId) {
-          try { JSON.parse(node.value || "{}"); } catch (_) { problems.push(problem("error", file.path, `${node.fieldName} 不是合法对象 JSON。`)); }
-        }
-      });
-    });
-
-    state.problems = problems;
-    addLog("validate", problems.length ? `发现 ${problems.length} 个问题` : "校验通过");
-    return problems;
-  }
-
-  function problem(level, scope, message) {
-    return { level, scope, message };
-  }
-
-  function packageProject() {
-    const problems = validateProject();
-    const hasError = problems.some((item) => item.level === "error");
-    state.dockTab = "package";
-    state.packageJob = {
-      steps: [
-        { name: "校验项目", status: hasError ? "blocked" : "done", note: hasError ? "存在错误，已停止" : "通过" },
-        { name: "生成 mod.json", status: hasError ? "pending" : "done", note: "前端已生成" },
-        { name: "写入 content JSON", status: hasError ? "pending" : "done", note: `${state.project.files.length} 个 JSON` },
-        { name: "复制资源目录", status: hasError ? "pending" : "done", note: "sprites/sounds/bundles 占位" },
-        { name: "请求后端 zip 打包", status: hasError ? "pending" : "done", note: state.api.mode === "mock" ? "Mock 完成，等待后端接口" : "已发送请求" },
-      ],
+  function handleFileImport(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(String(reader.result));
+        const asset = importAssetJson(data, file.name);
+        state.project.assets.push(asset);
+        selectAsset(asset.id);
+        toast("JSON 已导入", "success");
+      } catch (error) {
+        toast(`导入失败：${error.message}`, "error");
+      } finally {
+        event.target.value = "";
+      }
     };
-    if (!hasError) state.api.request("PackageMod", getPackagePlan());
-    renderAll();
+    reader.readAsText(file, "utf-8");
   }
 
-  function getPackagePlan() {
-    if (!state.project) return { fileCount: 0, files: {} };
-    const files = { "mod.json": getManifestJson() };
-    state.project.files.forEach((file) => { files[file.path] = buildJsonForFile(file); });
-    return { modName: state.project.manifest.name, fileCount: Object.keys(files).length, files, assets: state.project.assets };
+  function importAssetJson(data, fileName) {
+    const className = data.type || "Block";
+    const asset = createAsset(fileName.replace(/\.json$/i, ""), kindForClass(className), className);
+    asset.root = buildClassFromJson(data, className, asset.fileName);
+    asset.className = asset.root.className;
+    updateAssetPath(asset);
+    return asset;
   }
 
-  function saveProject() {
-    if (!state.project) return;
-    state.project.updatedAt = new Date().toISOString();
-    localStorage.setItem("mindustrymit.visual-editor.project", JSON.stringify({ version: 2, project: state.project }));
-    state.api.request("SaveProject", { Project: state.project });
-    addLog("project", "项目已保存到浏览器本地缓存");
-    renderDock();
+  function buildClassFromJson(data, fallbackClass, instanceName) {
+    const className = data.type || fallbackClass || "Block";
+    const classNode = createClassNode(className, instanceName || className);
+    Object.entries(data).forEach(([key, value]) => {
+      if (key === "type") return;
+      const meta = getField(className, key) || fieldDef(key, inferType(value), stringifyValue(value), "导入字段。");
+      const field = createField(meta, "");
+      applyImportedValue(field, value);
+      classNode.fields.push(field);
+    });
+    return classNode;
   }
 
-  function downloadProjectSnapshot() {
-    download(`${state.project.manifest.name}-project.json`, JSON.stringify({ version: 2, project: state.project }, null, 2), "application/json");
+  function applyImportedValue(field, value) {
+    if (Array.isArray(value)) {
+      field.elements = value.map((item) => {
+        if (item && typeof item === "object") {
+          const className = item.type || acceptedClass(field) || "ItemStack";
+          return { id: uid("element"), kind: "element", value: "", classNode: buildClassFromJson(item, className, className) };
+        }
+        return createElement(String(item ?? ""), "");
+      });
+      field.value = "";
+      return;
+    }
+
+    if (value && typeof value === "object") {
+      const className = value.type || acceptedClass(field);
+      if (className) {
+        field.child = buildClassFromJson(value, className, className);
+        field.value = "";
+      } else {
+        field.value = JSON.stringify(value, null, 2);
+      }
+      return;
+    }
+
+    field.value = String(value ?? "");
+  }
+
+  function saveProject(showToast) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.project));
+    if (showToast) toast("项目已保存到浏览器", "success");
+  }
+
+  function loadProject() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function hydrateProject(project) {
+    project.version ||= 2;
+    project.manifest ||= createStarterProject().manifest;
+    project.assets ||= [];
+    project.assets.forEach((asset) => {
+      asset.id ||= uid("asset");
+      asset.kind ||= kindForClass(asset.className || asset.root?.className || "Block");
+      asset.fileName = slugify(asset.fileName || asset.name || "content");
+      asset.root ||= createClassNode(asset.className || DEFAULT_CLASS_BY_KIND[asset.kind] || "Block", asset.fileName);
+      hydrateClass(asset.root);
+      asset.className = asset.root.className;
+      updateAssetPath(asset);
+    });
+  }
+
+  function hydrateClass(classNode) {
+    classNode.id ||= uid("class");
+    classNode.kind = "class";
+    classNode.fields ||= [];
+    classNode.fields.forEach((field) => {
+      field.id ||= uid("field");
+      field.kind = "field";
+      field.accepts ||= getField(classNode.className, field.name)?.accepts || [];
+      field.doc ||= getField(classNode.className, field.name)?.doc || "";
+      field.defaultValue ??= getField(classNode.className, field.name)?.defaultValue || "";
+      field.required ||= Boolean(getField(classNode.className, field.name)?.required);
+      if (field.child) hydrateClass(field.child);
+      if (field.elements) {
+        field.elements.forEach((element) => {
+          element.id ||= uid("element");
+          element.kind = "element";
+          if (element.classNode) hydrateClass(element.classNode);
+        });
+      } else if (isArrayType(field.type)) {
+        field.elements = [];
+      }
+    });
   }
 
   function downloadCurrentJson() {
-    const file = getActiveFile();
-    download(file ? `${file.name}.json` : "mod.json", JSON.stringify(getActiveJson(), null, 2), "application/json");
+    const asset = getActiveAsset();
+    const name = asset ? `${asset.fileName}.json` : "mod.json";
+    download(name, JSON.stringify(getActiveJson(), null, 2), "application/json");
   }
 
-  function downloadPackagePlan() {
-    download(`${state.project.manifest.name}-package-plan.json`, JSON.stringify(getPackagePlan(), null, 2), "application/json");
+  function copyCurrentJson() {
+    const text = JSON.stringify(getActiveJson(), null, 2);
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(() => toast("JSON 已复制", "success"));
+    } else {
+      toast("当前浏览器不支持剪贴板 API", "warning");
+    }
   }
 
   function download(name, content, mimeType) {
@@ -1537,21 +1845,113 @@
     URL.revokeObjectURL(url);
   }
 
-  function importJsonAsContent(data, name) {
-    if (!state.project) createProject({ name: "imported-mod", displayName: "Imported Mod", starterKind: "blocks" });
-    const className = data.type || "Block";
-    const kind = className === "Item" ? "items" : className === "Liquid" ? "liquids" : className === "UnitType" ? "units" : "blocks";
-    const file = createContentFile(kind, className, name.replace(/\.json$/i, ""));
-    const root = file.nodes.find((node) => node.kind === "class" && node.role === "root");
-    file.nodes = [root];
-    Object.entries(data).forEach(([key, value]) => {
-      if (key === "type") return;
-      const meta = getFieldsForClass(className).find((item) => item.name === key) || field(key, inferType(value), stringifyImportedValue(value), "导入字段");
-      const node = addFieldNode(file, root.id, meta);
-      node.value = stringifyImportedValue(value);
+  function getAllClasses() {
+    return unique([...(state.classes || []), ...getLocalClasses()]).sort(compareText);
+  }
+
+  function getLocalClasses() {
+    return LOCAL_TYPES.map((item) => item.name);
+  }
+
+  function getType(className) {
+    return LOCAL_TYPES.find((item) => item.name === className) || null;
+  }
+
+  function getFields(className) {
+    if (state.fieldCache.has(className)) return state.fieldCache.get(className);
+    const names = [];
+    const fields = [];
+    typeChain(className).forEach((typeName) => {
+      (LOCAL_FIELDS[typeName] || []).forEach((field) => {
+        if (!names.includes(field.name)) {
+          names.push(field.name);
+          fields.push(field);
+        }
+      });
     });
-    state.activeFileId = file.id;
-    state.selectedNodeId = root.id;
+    return fields;
+  }
+
+  function getField(className, fieldName) {
+    return getFields(className).find((field) => field.name === fieldName) || null;
+  }
+
+  function typeChain(className) {
+    const chain = [];
+    const seen = new Set();
+    let current = getType(className);
+    while (current && !seen.has(current.name)) {
+      chain.unshift(current.name);
+      seen.add(current.name);
+      current = current.parentType ? getType(current.parentType) : null;
+    }
+    if (!chain.includes(className)) chain.push(className);
+    return chain;
+  }
+
+  function defaultFieldValue(meta) {
+    if (meta.defaultValue != null && meta.defaultValue !== "") return meta.defaultValue;
+    return defaultValueByType(meta.type);
+  }
+
+  function defaultValueByType(type) {
+    if (type === "Boolean") return "false";
+    if (type === "Int" || type === "Float" || type === "Double") return "0";
+    if (type === "Color") return "#ffffff";
+    if (type === "Object") return "{}";
+    return "";
+  }
+
+  function isArrayType(type) {
+    return /^Array|^Seq|^List/.test(String(type || ""));
+  }
+
+  function isObjectLike(field) {
+    return field.type === "Object" || getLocalClasses().includes(field.type);
+  }
+
+  function acceptedClass(field) {
+    if (field.accepts?.length) return field.accepts[0];
+    if (field.type === "Array<ItemStack>") return "ItemStack";
+    if (field.type === "Array<Weapon>") return "Weapon";
+    if (field.type === "Object") return "BulletType";
+    if (getLocalClasses().includes(field.type)) return field.type;
+    return "";
+  }
+
+  function elementType(type) {
+    const match = String(type || "").match(/<([^>]+)>/);
+    return match ? match[1] : "String";
+  }
+
+  function kindForClass(className) {
+    return KIND_BY_CLASS[className] || "blocks";
+  }
+
+  function kindShort(kind) {
+    const map = { blocks: "B", items: "I", liquids: "L", units: "U", "status-effects": "S", weathers: "W", planets: "P" };
+    return map[kind] || "C";
+  }
+
+  function updateAssetPath(asset) {
+    asset.fileName = slugify(asset.fileName);
+    asset.path = `content/${asset.kind}/${asset.fileName}.json`;
+  }
+
+  function uniqueFileName(kind, className) {
+    const base = slugify(className || "content");
+    let candidate = base;
+    let index = 2;
+    while (state.project?.assets?.some((asset) => asset.kind === kind && asset.fileName === candidate)) {
+      candidate = `${base}-${index}`;
+      index += 1;
+    }
+    return candidate;
+  }
+
+  function normalizeColor(value) {
+    const text = String(value || "").trim();
+    return /^#[0-9a-f]{6}$/i.test(text) ? text : "#ffffff";
   }
 
   function inferType(value) {
@@ -1562,150 +1962,59 @@
     return "String";
   }
 
-  function stringifyImportedValue(value) {
-    if (Array.isArray(value)) return value.map((item) => typeof item === "object" ? JSON.stringify(item) : String(item)).join("\n");
+  function stringifyValue(value) {
     if (value && typeof value === "object") return JSON.stringify(value, null, 2);
     return String(value ?? "");
   }
 
-  function deleteSelectedNode() {
-    const file = getActiveFile();
-    const node = getSelectedNode();
-    if (!file || !node) return;
-    if (node.kind === "class" && node.role === "root") return;
-
-    if (node.kind === "class") {
-      file.nodes = file.nodes.filter((item) => item.id !== node.id && item.ownerId !== node.id);
-      file.nodes.forEach((item) => { if (item.connectionId === node.id) item.connectionId = null; });
-    } else {
-      file.nodes = file.nodes.filter((item) => item.id !== node.id);
-      file.nodes.forEach((item) => { if (item.connectionId === node.id) item.connectionId = null; });
-    }
-    state.selectedNodeId = file.nodes[0]?.id || null;
-    renderAll();
-  }
-
-  function deleteActiveFile() {
-    const file = getActiveFile();
-    if (!file) return;
-    state.project.files = state.project.files.filter((item) => item.id !== file.id);
-    state.activeFileId = state.project.files[0]?.id || "manifest";
-    state.selectedNodeId = getActiveFile()?.nodes[0]?.id || null;
-    renderAll();
-  }
-
-  function toggleSelectedBoolean() {
-    const node = getSelectedNode();
-    if (!node || node.kind !== "field" || node.type !== "Boolean") return;
-    node.value = node.value === "true" ? "false" : "true";
-    renderAll();
-  }
-
-  function openProjectModal() {
-    document.getElementById("projectModal").classList.remove("hidden");
-  }
-
-  function closeProjectModal() {
-    document.getElementById("projectModal").classList.add("hidden");
-  }
-
-  function migrateProject(project) {
-    project.files.forEach((file) => {
-      const root = file.nodes.find((node) => node.kind === "class" && node.role === "root")
-        || file.nodes.find((node) => node.kind === "root");
-      if (root && root.kind === "root") {
-        root.kind = "class";
-        root.role = "root";
-        root.className = file.className || root.className || root.title || "Block";
-        root.instanceName = file.name;
-      }
-      file.nodes.filter((node) => node.kind === "field" && !node.ownerId).forEach((node) => { node.ownerId = root?.id; });
-    });
-    return project;
-  }
-
-  function getActiveFile() {
-    if (!state.project || state.activeFileId === "manifest") return null;
-    return state.project.files.find((file) => file.id === state.activeFileId) || null;
-  }
-
-  function getSelectedNode() {
-    const file = getActiveFile();
-    return file ? findNode(file, state.selectedNodeId) : null;
-  }
-
-  function findNode(file, nodeId) {
-    return file?.nodes.find((node) => node.id === nodeId) || null;
-  }
-
-  function placeNode(node) {
-    const element = document.querySelector(`[data-node-id="${cssEscape(node.id)}"]`);
-    if (!element) return;
-    element.style.left = `${node.x}px`;
-    element.style.top = `${node.y}px`;
-  }
-
-  function applyCanvasTransform() {
-    const world = document.getElementById("canvasWorld");
-    const viewport = document.getElementById("canvasViewport");
-    if (!world || !viewport) return;
-    world.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
-    viewport.style.backgroundPosition = `${state.panX}px ${state.panY}px, ${state.panX}px ${state.panY}px, center, center`;
-  }
-
-  function nodeLabel(node) {
-    if (!node) return "";
-    if (node.kind === "builtin") return `${node.builtinKind}/${node.value}`;
-    if (node.kind === "class") return `${node.instanceName || node.className}:${node.className}`;
-    return node.fieldName;
-  }
-
-  function getClassNames() {
-    return state.classes.length ? state.classes : TYPE_CATALOG.map((item) => item.name);
-  }
-
-  function addLog(level, message) {
-    state.logs.push({ level, message, time: new Date().toLocaleTimeString() });
-    if (state.logs.length > 160) state.logs.shift();
-    if (state.dockTab === "logs" && document.getElementById("dockBody")) renderDock();
-  }
-
-  function uniqueFileName(kind, base) {
-    const clean = slugify(base || "content");
-    let candidate = clean;
-    let index = 2;
-    while (state.project.files.some((file) => file.kind === kind && file.name === candidate)) {
-      candidate = `${clean}-${index}`;
-      index += 1;
-    }
-    return candidate;
-  }
-
   function slugify(value) {
-    const slug = String(value || "").trim().toLowerCase().replace(/\.json$/i, "").replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
-    return slug || "content";
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\.json$/i, "")
+      .replace(/[^a-z0-9._-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "content";
   }
 
-  function toTitle(value) {
-    return String(value || "").replace(/[-_]+/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+  function unique(items) {
+    return Array.from(new Set(items.filter(Boolean)));
   }
 
-  function formatValue(value) {
-    const text = String(value ?? "");
-    return text.length > 30 ? `${text.slice(0, 27)}...` : text || "null";
-  }
-
-  function escapeHtml(value) {
-    return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
-  }
-
-  function cssEscape(value) {
-    if (window.CSS && CSS.escape) return CSS.escape(value);
-    return String(value).replace(/[^a-zA-Z0-9_-]/g, "\\$&");
+  function compareText(a, b) {
+    return String(a).localeCompare(String(b), "en");
   }
 
   function uid(prefix) {
-    return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+  }
+
+  function addLog(level, message) {
+    state.logs.push({ level, message });
+    if (state.logs.length > 80) state.logs.shift();
+    renderFeedback();
+  }
+
+  function toast(message, level) {
+    const node = document.createElement("div");
+    node.className = `toast ${level || "success"}`;
+    node.innerHTML = `<span>${esc(message)}</span><button type="button" class="icon-btn">×</button>`;
+    node.querySelector("button").addEventListener("click", () => node.remove());
+    dom.toastRegion.appendChild(node);
+    window.setTimeout(() => node.remove(), 3200);
+  }
+
+  function showApiError(error) {
+    addLog("error", error.message);
+    toast(error.message, "error");
+  }
+
+  function esc(value) {
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
   }
 
   window.addEventListener("DOMContentLoaded", boot);

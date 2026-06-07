@@ -29,6 +29,10 @@ dependencies {
 
     // Java-WebSocket
     implementation("org.java-websocket:Java-WebSocket:1.5.4")
+
+    testImplementation(kotlin("test"))
+    testImplementation("com.github.Anuken.Mindustry:core:$mindustryVersion")
+    testImplementation("com.github.Anuken.Arc:arc-core:$mindustryVersion")
 }
 
 group = "com.mindustry.ide"
@@ -52,6 +56,10 @@ tasks.shadowJar {
 
 tasks.build {
     dependsOn(tasks.shadowJar)
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
 
 publishing {

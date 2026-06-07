@@ -60,7 +60,7 @@ abstract class JsonEditorTool(val parser: JsonParser) {
             set(
                 choose(
                     jsonWorkFile.classBuild.getAllFields().map {
-                        FieldBuild(it, parser)
+                        FieldBuild(it, parser, ownerClassName = jsonWorkFile.classBuild.name)
                     })
             )
         }}
@@ -101,7 +101,7 @@ fun ClassBuild.addFieldBuild(choose: List<FieldBuild>.() -> FieldBuild, set: Fie
         set(
             choose(
                 getAllFields().map {
-                    FieldBuild(it, parser)
+                    FieldBuild(it, parser, ownerClassName = name)
                 })
         )
     }

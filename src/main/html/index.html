@@ -4,65 +4,84 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Mindustry JSON Mod 可视化编辑器</title>
-  <meta name="description" content="Mindustry JSON Mod visual editor">
+  <title>MindustryMIT JSON Editor</title>
+  <meta name="description" content="Mindustry JSON mod editor">
   <link rel="stylesheet" href="css/style.css">
   <link rel="icon" href="/favicon.ico" sizes="any">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon.png">
   <link rel="manifest" href="site.webmanifest">
-  <meta name="theme-color" content="#16191b">
+  <meta name="theme-color" content="#111418">
 </head>
 
 <body>
   <div id="app" class="app-shell">
     <header class="topbar">
       <div class="brand">
-        <span class="brand-mark" aria-hidden="true"></span>
+        <img src="icon.svg" alt="" class="brand-mark">
         <div class="brand-copy">
-          <strong>Mindustry JSON Mod Editor</strong>
-          <small id="connectionStatus">Mock API 就绪</small>
+          <strong>MindustryMIT JSON Editor</strong>
+          <span id="connectionState">离线模式</span>
         </div>
       </div>
 
-      <nav class="toolbar" aria-label="主工具栏">
-        <button type="button" class="tool-button" data-action="new-project" title="新建项目">
-          <span class="button-icon">+</span><span>新建</span>
-        </button>
-        <button type="button" class="tool-button" data-action="open-project" title="打开项目快照">
-          <span class="button-icon">[]</span><span>打开</span>
-        </button>
-        <button type="button" class="tool-button" data-action="save-project" title="保存到本地缓存">
-          <span class="button-icon">S</span><span>保存</span>
-        </button>
-        <button type="button" class="tool-button" data-action="validate-project" title="校验当前项目">
-          <span class="button-icon">!</span><span>校验</span>
-        </button>
-        <button type="button" class="tool-button primary" data-action="package-project" title="打包 Mod">
-          <span class="button-icon">#</span><span>打包</span>
-        </button>
+      <nav class="toolbar" aria-label="项目操作">
+        <button type="button" class="btn primary" data-action="open-new-dialog" title="新建内容">新建</button>
+        <button type="button" class="btn" data-action="import-json" title="导入 JSON">导入</button>
+        <button type="button" class="btn" data-action="save-project" title="保存到浏览器">保存</button>
+        <button type="button" class="btn" data-action="validate-project" title="检查当前项目">检查</button>
+        <button type="button" class="btn" data-action="download-current" title="下载当前 JSON">下载</button>
       </nav>
 
       <form id="connectionForm" class="connection-form">
-        <label for="wsUrl">WS</label>
-        <input id="wsUrl" name="wsUrl" value="ws://127.0.0.1:9010" autocomplete="off">
-        <button type="submit" class="icon-button" title="连接后端接口">连接</button>
+        <label>
+          <span>WebSocket</span>
+          <input id="wsUrl" name="wsUrl" value="ws://127.0.0.1:19190" autocomplete="off">
+        </label>
+        <label>
+          <span>Data_Dir</span>
+          <input id="dataDir" name="dataDir" value="./data" autocomplete="off">
+        </label>
+        <button type="submit" class="btn">连接</button>
+        <button type="button" class="btn" data-action="init-backend">Init</button>
       </form>
     </header>
 
     <main class="workspace">
-      <aside class="sidebar" aria-label="项目资源">
-        <section class="panel project-panel">
-          <div class="panel-header">
-            <div>
-              <h2>项目</h2>
-              <p id="projectSubtitle">未加载</p>
-            </div>
-            <button type="button" class="icon-button" data-action="edit-manifest" title="编辑 mod.json">mod</button>
+      <aside class="left-pane">
+        <section class="panel manifest-panel">
+          <div class="panel-head">
+            <h2>mod.json</h2>
+            <button type="button" class="icon-btn" data-action="select-manifest" title="编辑 mod.json">编辑</button>
           </div>
+          <div class="manifest-grid">
+            <label>
+              <span>name</span>
+              <input data-manifest="name" autocomplete="off">
+            </label>
+            <label>
+              <span>displayName</span>
+              <input data-manifest="displayName" autocomplete="off">
+            </label>
+            <label>
+              <span>version</span>
+              <input data-manifest="version" autocomplete="off">
+            </label>
+            <label>
+              <span>minGameVersion</span>
+              <input data-manifest="minGameVersion" autocomplete="off">
+            </label>
+          </div>
+        </section>
 
-          <div class="quick-add">
-            <select id="contentKind" title="内容目录">
+        <section class="panel asset-panel">
+          <div class="panel-head">
+            <h2>内容文件</h2>
+            <button type="button" class="icon-btn accent" data-action="open-new-dialog" title="新建内容">+</button>
+          </div>
+          <div class="filter-line">
+            <select id="kindFilter" title="目录筛选">
+              <option value="all">全部目录</option>
               <option value="blocks">blocks</option>
               <option value="items">items</option>
               <option value="liquids">liquids</option>
@@ -71,123 +90,103 @@
               <option value="weathers">weathers</option>
               <option value="planets">planets</option>
             </select>
-            <select id="classPicker" title="Mindustry 类型"></select>
-            <button type="button" class="icon-button accent" id="addContentButton" data-action="add-content-kind" title="新增 JSON 内容">+</button>
+            <input id="assetSearch" placeholder="搜索文件" autocomplete="off">
           </div>
-
-          <div id="resourceTree" class="resource-tree"></div>
+          <div id="assetList" class="asset-list" role="list"></div>
         </section>
 
-        <section class="panel palette-panel">
-          <div class="panel-header compact">
-            <h2>字段库</h2>
-            <span id="fieldCount" class="pill">0</span>
+        <section class="panel class-panel">
+          <div class="panel-head">
+            <h2>类浏览</h2>
+            <span id="classCount" class="badge">0</span>
           </div>
-          <input id="fieldSearch" class="search-input" placeholder="搜索字段">
-          <div id="fieldPalette" class="field-palette"></div>
+          <input id="classSearch" placeholder="搜索类或字段" autocomplete="off">
+          <div id="classList" class="class-list" role="list"></div>
         </section>
       </aside>
 
-      <section class="canvas-area" aria-label="节点画布">
-        <div class="canvas-toolbar">
-          <div class="segmented">
-            <button type="button" class="is-active" data-canvas-mode="select">选择</button>
-            <button type="button" data-canvas-mode="connect">连线</button>
-            <button type="button" data-canvas-mode="pan">移动</button>
+      <section class="editor-pane">
+        <div class="editor-head">
+          <div class="asset-title">
+            <strong id="activeTitle">未选择内容</strong>
+            <span id="activePath">mod.json</span>
           </div>
-          <div class="canvas-actions">
-            <button type="button" class="icon-button" data-action="add-class-node" title="新增 Class 定义块">class</button>
-            <button type="button" class="icon-button" data-action="add-builtin-node" title="新增内置实例块">built-in</button>
-            <button type="button" class="icon-button" data-action="zoom-out" title="缩小">-</button>
-            <span id="zoomLabel" class="zoom-label">100%</span>
-            <button type="button" class="icon-button" data-action="zoom-in" title="放大">+</button>
-            <button type="button" class="icon-button" data-action="fit-canvas" title="适配画布">fit</button>
-            <button type="button" class="icon-button danger" data-action="delete-node" title="删除选中节点">del</button>
+          <div class="view-tabs" role="tablist" aria-label="编辑视图">
+            <button type="button" class="is-active" data-view="table">表格</button>
+            <button type="button" data-view="json">预览</button>
+            <button type="button" data-view="backend">后端</button>
           </div>
         </div>
 
-        <div id="canvasViewport" class="canvas-viewport">
-          <div id="canvasWorld" class="canvas-world">
-            <svg id="wireLayer" class="wire-layer" aria-hidden="true"></svg>
-            <div id="nodeLayer" class="node-layer"></div>
-          </div>
+        <div id="assetConfig" class="asset-config"></div>
+
+        <div class="field-addbar">
+          <select id="fieldSelect" title="可添加字段"></select>
+          <button type="button" class="btn primary" data-action="add-selected-field">添加字段</button>
+          <button type="button" class="btn" data-action="get-selected-value">GetFieldValue</button>
+          <button type="button" class="btn" data-action="export-from-backend">ExportClass</button>
         </div>
+
+        <div id="editorBody" class="editor-body"></div>
       </section>
 
-      <aside class="inspector" aria-label="属性面板">
-        <div class="panel inspector-panel">
-          <div class="panel-header">
-            <div>
-              <h2>Details</h2>
-              <p id="selectionSubtitle">未选择节点</p>
-            </div>
-            <span id="activeFileBadge" class="pill">mod.json</span>
+      <aside class="right-pane">
+        <section class="panel inspector-panel">
+          <div class="panel-head">
+            <h2>字段文档</h2>
+            <span id="selectionKind" class="badge">none</span>
           </div>
           <div id="inspectorBody" class="inspector-body"></div>
-        </div>
+        </section>
+
+        <section class="panel preview-panel">
+          <div class="panel-head">
+            <h2>实时 JSON</h2>
+            <button type="button" class="icon-btn" data-action="copy-current-json" title="复制 JSON">复制</button>
+          </div>
+          <pre id="livePreview" class="mini-preview"></pre>
+        </section>
+
+        <section class="panel feedback-panel">
+          <div class="panel-head">
+            <h2>反馈</h2>
+            <span id="problemCount" class="badge">0</span>
+          </div>
+          <div id="feedbackList" class="feedback-list"></div>
+        </section>
       </aside>
     </main>
-
-    <footer class="bottom-dock">
-      <div class="dock-tabs">
-        <button type="button" class="is-active" data-dock-tab="json">JSON</button>
-        <button type="button" data-dock-tab="problems">问题</button>
-        <button type="button" data-dock-tab="logs">日志</button>
-        <button type="button" data-dock-tab="package">打包</button>
-      </div>
-      <div id="dockBody" class="dock-body"></div>
-    </footer>
   </div>
 
-  <div id="projectModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="projectModalTitle">
-    <form id="projectForm" class="modal">
-      <div class="modal-header">
-        <h2 id="projectModalTitle">新建 Mindustry Mod</h2>
-        <button type="button" class="icon-button" data-action="close-project-modal" title="关闭">x</button>
+  <div id="newDialog" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="newDialogTitle">
+    <form id="newContentForm" class="modal">
+      <div class="modal-head">
+        <h2 id="newDialogTitle">新建内容</h2>
+        <button type="button" class="icon-btn" data-action="close-new-dialog" title="关闭">×</button>
       </div>
       <div class="form-grid">
         <label>
-          <span>内部名称</span>
-          <input name="name" required value="visual-json-mod" pattern="[a-z0-9._-]+">
+          <span>目录</span>
+          <select name="kind" id="newKind"></select>
         </label>
         <label>
-          <span>显示名称</span>
-          <input name="displayName" required value="Visual JSON Mod">
-        </label>
-        <label>
-          <span>作者</span>
-          <input name="author" value="MindustryMIT">
-        </label>
-        <label>
-          <span>版本</span>
-          <input name="version" value="1.0.0">
-        </label>
-        <label>
-          <span>最低游戏版本</span>
-          <input name="minGameVersion" value="146">
-        </label>
-        <label>
-          <span>默认内容类型</span>
-          <select name="starterKind">
-            <option value="blocks">blocks</option>
-            <option value="items">items</option>
-            <option value="liquids">liquids</option>
-            <option value="units">units</option>
-          </select>
+          <span>类</span>
+          <select name="className" id="newClassName"></select>
         </label>
         <label class="span-2">
-          <span>说明</span>
-          <textarea name="description" rows="3">Created with the MindustryMIT visual JSON editor.</textarea>
+          <span>文件名</span>
+          <input name="fileName" value="copper-wall" required pattern="[a-z0-9._-]+" autocomplete="off">
         </label>
       </div>
       <div class="modal-actions">
-        <button type="button" class="tool-button" data-action="close-project-modal">取消</button>
-        <button type="submit" class="tool-button primary">创建项目</button>
+        <button type="button" class="btn" data-action="close-new-dialog">取消</button>
+        <button type="submit" class="btn primary">创建</button>
       </div>
     </form>
   </div>
 
-  <input id="projectFileInput" class="hidden" type="file" accept="application/json,.json">
+  <input id="fileInput" class="hidden" type="file" accept="application/json,.json">
+  <div id="toastRegion" class="toast-region" aria-live="polite"></div>
   <script src="js/app.js"></script>
 </body>
 

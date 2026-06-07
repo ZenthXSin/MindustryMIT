@@ -5,9 +5,14 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.put
 import arc.util.Nullable
 import mindustry.world.Block
 import java.lang.reflect.Field
@@ -97,6 +102,53 @@ fun String.isNumber(): Boolean {
 
 val json = Json { prettyPrint = true }
 
+fun Field.isJsonEditableField(): Boolean {
+    return !Modifier.isTransient(modifiers) &&
+        !Modifier.isStatic(modifiers) &&
+        !Modifier.isFinal(modifiers) &&
+        !isSynthetic
+}
+
+private fun Class<*>.isStringLike(): Boolean {
+    return this == String::class.java || this == Char::class.java || name == "java.lang.Character"
+}
+
+private fun Class<*>.isBooleanLike(): Boolean {
+    return this == Boolean::class.java || name == "java.lang.Boolean"
+}
+
+private fun Class<*>.isIntegerLike(): Boolean {
+    return this == Int::class.java ||
+        this == Long::class.java ||
+        this == Short::class.java ||
+        this == Byte::class.java ||
+        name in setOf("java.lang.Integer", "java.lang.Long", "java.lang.Short", "java.lang.Byte")
+}
+
+private fun Class<*>.isFloatingLike(): Boolean {
+    return this == Float::class.java ||
+        this == Double::class.java ||
+        name in setOf("java.lang.Float", "java.lang.Double")
+}
+
+private fun primitiveJsonFor(type: Class<*>, rawValue: String): JsonElement {
+    if (rawValue == "null" && !type.isStringLike()) return JsonNull
+
+    return when {
+        type.isStringLike() -> JsonPrimitive(rawValue)
+        type.isBooleanLike() -> when (rawValue.lowercase()) {
+            "true" -> JsonPrimitive(true)
+            "false" -> JsonPrimitive(false)
+            "" -> JsonPrimitive(false)
+            else -> throw IllegalArgumentException("字段类型 ${type.name} 需要 Boolean 值，实际为 $rawValue")
+        }
+        type.isIntegerLike() -> JsonPrimitive(rawValue.toLongOrNull() ?: 0L)
+        type.isFloatingLike() -> JsonPrimitive(rawValue.toDoubleOrNull() ?: 0.0)
+        rawValue.isEmpty() -> JsonNull
+        else -> JsonPrimitive(rawValue)
+    }
+}
+
 class JsonWorkFile(
     name: String,
     val parser: IJsonParser
@@ -127,12 +179,12 @@ class JsonWorkFile(
 
     private fun buildClassBuildFromJson(obj: JsonObject, defaultType: Class<*>): ClassBuild {
         val typeName = (obj["type"] as? JsonPrimitive)?.contentOrNull
-        val cls = typeName?.let { parser.classMap?.get(it) } ?: defaultType
+        val cls = typeName?.let { parser.getClassByName(it) } ?: defaultType
         val cb = ClassBuild(cls, parser)
         for ((key, element) in obj) {
             if (key == "type") continue
-            val field = cls.fields.firstOrNull { it.name == key } ?: continue
-            val fb = FieldBuild(field, parser)
+            val field = cb.getFieldByName(key) ?: continue
+            val fb = FieldBuild(field, parser, ownerClassName = cb.name)
             applyJsonToFieldBuild(fb, element, field)
             cb.addFieldBuild { fb }
         }
@@ -179,8 +231,7 @@ class JsonWorkFile(
     }
 
     override fun getContent(): String {
-        val jsonString = classBuild.toJson()
-        return formatJson(jsonString)
+        return json1.encodeToString(classBuild.toJsonElement())
     }
 
     fun formatJson(json: String): String {
@@ -196,7 +247,7 @@ class JsonWorkFile(
 
 
     override fun toString(): String {
-        return json.encodeToString(classBuild)
+        return json.encodeToString(classBuild.getMeta())
     }
 
     fun addFieldBuild(run: (data: ClassBuild) -> FieldBuild) {
@@ -217,7 +268,7 @@ class ClassBuild(
         doc = parser.getClassDoc(classData.name)
         parentType = parser.getParentType(classData.name)
         if (value.isEmpty()) {
-            value = parser.getFieldDefaultValue(classData.simpleName)[0]
+            value = parser.getFieldDefaultValue(classData.simpleName).firstOrNull() ?: "null"
         }
     }
 
@@ -239,44 +290,29 @@ class ClassBuild(
         return fieldBuilds.removeIf { it.field.name == fieldName }
     }
 
-    fun toJson(): String {
-        // 如果 value 非空且不为 "null"，直接输出值
-        if (value.isNotEmpty() && value != "null") {
-            return if (value.isBooleanString()) {
-                value
-            } else if (value.isNumber()) {
-                value
-            } else {
-                "\"$value\""
-            }
-        }
-        
-        // 如果没有子字段，输出 null（基本类型或空对象）
+    fun toJsonElement(): JsonElement {
         if (fieldBuilds.isEmpty()) {
-            return "null"
+            return primitiveJsonFor(classData, value)
         }
-        
-        // 有子字段，输出对象结构
-        var ret = "{\n"
-        ret += "\"type\": \"$name\"" + if (fieldBuilds.isEmpty()) "\n" else ",\n"
-        for (fieldBuild in fieldBuilds) {
-            ret += fieldBuild.toJson() + if (fieldBuild != fieldBuilds.last()) {
-                ",\n"
-            } else {
-                "\n"
+
+        return buildJsonObject {
+            put("type", name)
+            fieldBuilds.forEach { fieldBuild ->
+                put(fieldBuild.field.name, fieldBuild.toJsonElement())
             }
         }
-        return "$ret}"
     }
+
+    fun toJson(): String = json.encodeToString(toJsonElement())
 
     fun getMeta(): ClassMeta {
         return ClassMeta(classData.name, name, doc, parentType, fieldBuilds.map { it.getMeta() }, value)
     }
 
-    fun getAllFields(): List<Field> = classData.fields.toList()
+    fun getAllFields(): List<Field> = classData.fields.filter { it.isJsonEditableField() }
 
     fun getFieldByName(name: String): Field? {
-        return classData.fields.firstOrNull { it.name == name }
+        return getAllFields().firstOrNull { it.name == name }
     }
 
     fun getFieldBuildByName(name: String): FieldBuild? {
@@ -297,12 +333,13 @@ class FieldBuild(
     var field: Field,
     val parser: IJsonParser,
     var classData: Class<*> = field.type,
+    var ownerClassName: String = field.declaringClass.simpleName,
     var doc: String = ""
 ) {
     var value = Value(getDefaultForClass(field.type), ClassBuild(field.type, parser))
 
     init {
-        doc = parser.getFieldDoc(classData.name, field.name)
+        doc = parser.getFieldDoc(ownerClassName, field.name)
         if (field.isSeqOrArrayType()) {
             val elemType = field.getSeqElementType()
             if (elemType != null) {
@@ -324,8 +361,12 @@ class FieldBuild(
         return FieldMeta(field.name, classData.name, doc, value.getTypeValueMeta())
     }
 
+    fun toJsonElement(): JsonElement = value.toJsonElement(field.type)
+
     fun toJson(): String {
-        return "\"${field.name}\": " + value.toJson()
+        return json.encodeToString(buildJsonObject { put(field.name, toJsonElement()) })
+            .removePrefix("{")
+            .removeSuffix("}")
     }
 
     companion object {
@@ -363,42 +404,30 @@ class Value<T>(var value: String, var typeValue: T, var run: (Value<T>) -> Strin
         return ValueMeta(value, getTypeValueMeta())
     }
 
-    fun toJson(): String {
-        return run(this) ?: when {
-            // Seq/Array：优先发出 JSON 数组（即使为空也输出 [] 而非 null）
-            elements != null -> {
-                val list = elements!!
-                if (list.isEmpty()) "[]"
-                else list.joinToString(prefix = "[", postfix = "]", separator = ", ") { it.toJson() }
-            }
-            // 值非空且不为 "null"：可能是布尔、数字或普通字符串
-            value.isNotEmpty() && value != "null" -> {
-                if (value.isBooleanString()) value
-                else if (value.isNumber()) value
-                else "\"$value\""
-            }
-            // 值为空或为 "null"：检查 typeValue
-            typeValue is ClassBuild -> {
-                val classBuild = typeValue as ClassBuild
-                // 判断是否为基本类型或常见包装类
-                val isPrimitiveType = classBuild.classData.isPrimitive ||
-                    classBuild.classData.simpleName in listOf(
-                        "String", "Boolean", "Integer", "Float", "Double",
-                        "Long", "Short", "Byte", "Character"
-                    ) ||
-                    classBuild.classData.name.startsWith("java.lang")
-
-                if (isPrimitiveType) {
-                    // 基本类型：输出 null
-                    "null"
-                } else {
-                    // 复杂类型：输出对象结构
-                    classBuild.toJson()
-                }
-            }
-            else -> typeValue?.toString() ?: "null"
+    fun toJsonElement(targetType: Class<*>): JsonElement {
+        run(this)?.let { raw ->
+            return runCatching { Json.parseToJsonElement(raw) }
+                .getOrElse { primitiveJsonFor(targetType, raw) }
         }
+
+        elements?.let { list ->
+            return buildJsonArray {
+                list.forEach { add(it.toJsonElement()) }
+            }
+        }
+
+        if (value.isNotEmpty() || targetType.isStringLike()) {
+            return primitiveJsonFor(targetType, value)
+        }
+
+        if (typeValue is ClassBuild) {
+            return (typeValue as ClassBuild).toJsonElement()
+        }
+
+        return typeValue?.let { JsonPrimitive(it.toString()) } ?: JsonNull
     }
+
+    fun toJson(): String = json.encodeToString(toJsonElement(String::class.java))
 
     fun getString(): String {
         return run(this) ?: when {

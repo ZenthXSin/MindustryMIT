@@ -1,21 +1,22 @@
 package com.mindustry.ide.tool.json
 
+import com.mindustry.ide.tool.json.JsonApi.ToolData.JsonApiWebSocketHandler
 import com.mindustry.ide.tool.json.JsonParser.Companion.jsonFormat
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.java_websocket.WebSocket
-import org.java_websocket.client.WebSocketClient
 import org.java_websocket.handshake.ClientHandshake
-import org.java_websocket.handshake.ServerHandshake
 import org.java_websocket.server.WebSocketServer
 import java.io.File
 import java.net.InetSocketAddress
-import java.net.URI
-import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.ZipInputStream
 
 
@@ -27,22 +28,55 @@ class JsonApi {
 
     val toolManagers = mutableMapOf<String, Pair<JsonEditorTool, Tool>>()
 
+    val server = JsonApiWebSocketHandler()
+
     class Tool(val jet: JsonEditorTool) {
 
     }
 
-    class ToolData(val parser: JsonParser = JsonParser()) {
-        val classDataMap: MutableMap<Int, Tool> = mutableMapOf()
-        val classBuildMap: MutableMap<Int, ClassBuild> = mutableMapOf()
-        private val registeredClasses: MutableMap<String, Class<*>> = mutableMapOf()
-        private var nextId: Int = 0
+    class ToolData(
+        val parser: JsonParser = JsonParser(),
+        dataRoot: File = File(System.getProperty("mindustrymit.dataRoot", ".mindustrymit-data")).absoluteFile
+    ) {
+        val classDataMap: MutableMap<Int, Tool> = ConcurrentHashMap()
+        val classBuildMap: MutableMap<Int, ClassBuild> = ConcurrentHashMap()
+        private val registeredClasses: MutableMap<String, Class<*>> = ConcurrentHashMap()
+        private val nextId: AtomicInteger = AtomicInteger()
+        private val dataRoot: File = dataRoot.absoluteFile
 
-        var error: (String) -> Unit = {}
-        var info: (String) -> Unit = {}
-        var warning: (String) -> Unit = {}
-        var debug: (String) -> Unit = {}
+        var error: (String) -> Unit = {
+            println("Error: $it")
+        }
+        var info: (String) -> Unit = {
+            println("Info: $it")
+        }
+        var warning: (String) -> Unit = {
+            println("Warning: $it")
+        }
+        var debug: (String) -> Unit = {
+            println("Debug: $it")
+        }
 
         private data class InitResult(val success: Boolean, val docCount: Int, val message: String)
+
+        companion object {
+            fun defaultDataRoot(): File {
+                return File(System.getProperty("mindustrymit.dataRoot", ".mindustrymit-data")).absoluteFile
+            }
+        }
+
+        private fun resolveDataDir(dataDirPath: String): File {
+            val root = dataRoot.canonicalFile
+            val requested = if (dataDirPath.isBlank()) root else File(dataDirPath)
+            val target = if (requested.isAbsolute) requested.canonicalFile else File(root, dataDirPath).canonicalFile
+
+            if (target != root && !target.path.startsWith(root.path + File.separator)) {
+                fail("Data_Dir 必须位于允许的数据根目录内: ${root.absolutePath}")
+            }
+
+            target.mkdirs()
+            return target
+        }
 
         private fun initBackend(dataDirPath: String): InitResult {
             if (dataDirPath.isBlank()) {
@@ -50,7 +84,7 @@ class JsonApi {
             }
 
             return try {
-                val dataDir = File(dataDirPath).absoluteFile
+                val dataDir = resolveDataDir(dataDirPath)
                 val docDir = File(dataDir, "doc")
                 val markerFile = File(dataDir, ".mindustrymit-initialized")
 
@@ -119,10 +153,13 @@ class JsonApi {
 
         fun registerClass(className: String, clazz: Class<*>) {
             registeredClasses[className] = clazz
+            registeredClasses[JsonParser.normalizeClassName(className)] = clazz
+            registeredClasses[clazz.name] = clazz
+            registeredClasses[clazz.simpleName] = clazz
         }
 
         fun newClass(className: String): Int {
-            val id = nextId++
+            val id = nextId.getAndIncrement()
             val tool = Tool(ApiJsonEditorTool(parser))
             classDataMap[id] = tool
             classBuildMap[id] = ClassBuild(resolveClass(className), parser)
@@ -147,8 +184,8 @@ class JsonApi {
 
         private fun resolveClass(className: String): Class<*> {
             return registeredClasses[className]
-                ?: parser.classMap?.get(className)
-                ?: parser.classMap?.find { it.key == className }?.value
+                ?: registeredClasses[JsonParser.normalizeClassName(className)]
+                ?: parser.getClassByName(className)
                 ?: fail("类 $className 不存在，请先初始化或检查类名")
         }
 
@@ -171,10 +208,15 @@ class JsonApi {
         private fun getOrCreateFieldBuild(classBuild: ClassBuild, fieldName: String): FieldBuild {
             classBuild.getFieldBuildByName(fieldName)?.let { return it }
             val field = classBuild.getFieldByName(fieldName) ?: fail("字段 $fieldName 不存在于 ${classBuild.name}")
-            return FieldBuild(field, parser).also { classBuild.addFieldBuild { it } }
+            return FieldBuild(field, parser, ownerClassName = classBuild.name).also { classBuild.addFieldBuild { it } }
         }
 
-        private fun resolveParentField(classId: Int, path: List<String>, createMissing: Boolean = true): FieldBuild {
+        private sealed class PathTarget {
+            data class FieldTarget(val field: FieldBuild) : PathTarget()
+            data class ElementTarget(val build: ClassBuild) : PathTarget()
+        }
+
+        private fun resolvePath(classId: Int, path: List<String>, createMissing: Boolean = true): PathTarget {
             if (path.isEmpty()) fail("Field_Path 不能为空")
 
             var current = getClassBuild(classId)
@@ -189,7 +231,9 @@ class JsonApi {
                     if (elementIndex !in elements.indices) {
                         fail("数组下标 $elementIndex 越界，字段 ${field.field.name} 当前长度 ${elements.size}")
                     }
-                    current = elements[elementIndex]
+                    val element = elements[elementIndex]
+                    if (isLast) return PathTarget.ElementTarget(element)
+                    current = element
                     currentField = null
                 } else {
                     val field = if (createMissing) {
@@ -198,7 +242,7 @@ class JsonApi {
                         current.getFieldBuildByName(segment) ?: fail("字段 $segment 尚未创建")
                     }
 
-                    if (isLast) return field
+                    if (isLast) return PathTarget.FieldTarget(field)
 
                     currentField = field
                     if (!isIndexSegment(path[index + 1])) {
@@ -211,25 +255,38 @@ class JsonApi {
             fail("无法解析 Field_Path: $path")
         }
 
-        private fun setFieldValue(classId: Int, path: List<String>, value: String): String {
-            val field = resolveParentField(classId, path)
-            field.value.value = value
-            field.value.elements = null
-            return field.value.toJson()
-        }
+        private fun setFieldValue(classId: Int, path: List<String>, value: String): String =
+            when (val t = resolvePath(classId, path)) {
+                is PathTarget.FieldTarget -> {
+                    t.field.value.value = value
+                    t.field.value.elements = null
+                    t.field.value.toJson()
+                }
+                is PathTarget.ElementTarget -> {
+                    t.build.value = value
+                    t.build.fieldBuilds.clear()
+                    t.build.toJson()
+                }
+            }
 
-        private fun getFieldValue(classId: Int, path: List<String>): String {
-            val field = resolveParentField(classId, path, createMissing = false)
-            return field.value.toJson()
-        }
+        private fun getFieldValue(classId: Int, path: List<String>): String =
+            when (val t = resolvePath(classId, path, createMissing = false)) {
+                is PathTarget.FieldTarget -> t.field.value.toJson()
+                is PathTarget.ElementTarget -> t.build.toJson()
+            }
 
         private fun addElement(classId: Int, path: List<String>, elementTypeName: String, value: String): Int {
-            val field = resolveParentField(classId, path)
+            val target = resolvePath(classId, path)
+            val field = (target as? PathTarget.FieldTarget)?.field
+                ?: fail("AddElement 目标必须是字段，不能是数组元素")
+            if (!field.field.isSeqOrArrayType()) {
+                fail("字段 ${field.field.name} 不是数组、Seq 或 List 类型")
+            }
             val elements = field.value.elements ?: mutableListOf<ClassBuild>().also { field.value.elements = it }
             val elementClass = if (elementTypeName.isNotBlank()) {
                 resolveClass(elementTypeName)
             } else {
-                field.value.typeValue.classData
+                field.field.getSeqElementType() ?: fail("字段 ${field.field.name} 无法推断元素类型，请传入 Element_Type")
             }
 
             val element = ClassBuild(elementClass, parser)
@@ -243,13 +300,42 @@ class JsonApi {
             return getClassBuild(classId).toJson()
         }
 
+        private fun safeDocFileName(type: String): String {
+            val sanitized = type.replace(Regex("[^A-Za-z0-9_.-]"), "_").trim('_', '.')
+            return sanitized.ifBlank { "type" }
+        }
+
         private fun fail(message: String): Nothing {
             throw IllegalArgumentException(message)
         }
 
+        fun errorResponse(message: String, sourceType: WebSocketDataType? = null): String {
+            val reply = WebSocketData.reply(
+                WebSocketDataType.Error,
+                mapOf(
+                    "Success" to Data(boolean = false),
+                    "Message" to Data(str = message),
+                    "Source_Type" to Data(str = sourceType?.name ?: "")
+                )
+            )
+            return jsonFormat.encodeToString(WebSocketData.serializer(), reply)
+        }
+
+        private val json1 = Json { prettyPrint = true }
+
         fun contentParsing(message: String): String {
-            val data = jsonFormat.decodeFromString(WebSocketData.serializer(), message)
-            return when (data.wsType) {
+            val data = try {
+                jsonFormat.decodeFromString(WebSocketData.serializer(), message)
+            } catch (e: Exception) {
+                return errorResponse("请求格式错误: ${e.message ?: e::class.java.name}")
+            }
+
+            return try {
+                when (data.wsType) {
+                WebSocketDataType.Error -> {
+                    errorResponse("Error 请求类型不能作为业务请求", WebSocketDataType.Error)
+                }
+
                 WebSocketDataType.Init -> {
                     val dataDir = data.dataList["Data_Dir"]?.str ?: ""
                     val result = initBackend(dataDir)
@@ -428,7 +514,45 @@ class JsonApi {
                     )
                 }
 
+                WebSocketDataType.FetchDoc -> {
+                    val dataDirPath = data.dataList["Data_Dir"]?.str ?: ""
+                    val reply = try {
+                        val docDir = File(resolveDataDir(dataDirPath), "doc").canonicalFile
+                        docDir.mkdirs()
+                        val fetcher = object : com.mindustry.ide.tool.json.libs.DocFetch() {
+                            override fun saveTypeMeta(meta: TypeMeta) {
+                                val file = File(docDir, "${safeDocFileName(meta.type)}.json")
+                                file.writeText(
+                                    json1
+                                        .encodeToString(TypeMeta.serializer(), meta),
+                                    Charsets.UTF_8
+                                )
+                            }
+                        }
+                        val results = kotlinx.coroutines.runBlocking { fetcher.execute() }
+                        WebSocketData.reply(
+                            WebSocketDataType.FetchDoc, mapOf(
+                                "Success" to Data(boolean = results.isNotEmpty()),
+                                "Doc_Count" to Data(int = results.size),
+                                "Message" to Data(str = "Fetched ${results.size} types to ${docDir.absolutePath}")
+                            )
+                        )
+                    } catch (e: Exception) {
+                        WebSocketData.reply(
+                            WebSocketDataType.FetchDoc, mapOf(
+                                "Success" to Data(boolean = false),
+                                "Doc_Count" to Data(int = 0),
+                                "Message" to Data(str = e.message ?: e::class.java.name)
+                            )
+                        )
+                    }
+                    jsonFormat.encodeToString(WebSocketData.serializer(), reply)
+                }
 
+
+                }
+            } catch (e: Exception) {
+                errorResponse(e.message ?: e::class.java.name, data.wsType)
             }
         }
 
@@ -450,7 +574,13 @@ class JsonApi {
             }
         }
 
-        class JsonApiWebSocketHandler(val toolData: ToolData, val port: Int) {
+        class JsonApiWebSocketHandler(
+            val toolData: ToolData = ToolData(),
+            val port: Int = 19190,
+            private val bindHost: String = "127.0.0.1",
+            private val token: String? = System.getProperty("mindustrymit.wsToken")?.takeIf { it.isNotBlank() },
+            private val allowedOrigins: Set<String> = emptySet()
+        ) {
             private var server: Server? = null
 
             fun start() {
@@ -458,9 +588,11 @@ class JsonApi {
                     toolData.info("WebSocket 服务器已在运行")
                     return
                 }
-                server = Server(InetSocketAddress(port), this)
-                server?.start()
-                toolData.info("WebSocket 服务器启动在端口: $port")
+                val s = Server(InetSocketAddress(bindHost, port), this)
+                server = s
+                s.start()
+                s.startLatch.await(10, TimeUnit.SECONDS)
+                toolData.info("WebSocket 服务器启动在 $bindHost:$port")
             }
 
             fun stop() {
@@ -481,16 +613,47 @@ class JsonApi {
                 toolData.debug("广播消息: $message")
             }
 
+            private fun isOriginAllowed(handshake: ClientHandshake): Boolean {
+                if (allowedOrigins.isEmpty()) return true
+                val origin = handshake.getFieldValue("Origin") ?: ""
+                return origin in allowedOrigins
+            }
+
+            private fun isAuthorized(message: String): Boolean {
+                val expected = token ?: return true
+                val root = runCatching { Json.parseToJsonElement(message).jsonObject }.getOrNull() ?: return false
+                val topLevel = root["Token"]?.jsonPrimitive?.contentOrNull
+                    ?: root["token"]?.jsonPrimitive?.contentOrNull
+                if (topLevel == expected) return true
+
+                val content = root["content"]?.jsonPrimitive?.contentOrNull ?: return false
+                val contentToken = runCatching {
+                    val contentObject = Json.parseToJsonElement(content).jsonObject
+                    contentObject["Token"]?.jsonPrimitive?.contentOrNull
+                        ?: contentObject["token"]?.jsonPrimitive?.contentOrNull
+                }.getOrNull()
+                return contentToken == expected
+            }
+
             class Server(address: InetSocketAddress, private val handler: JsonApiWebSocketHandler) :
                 WebSocketServer(address) {
+                val startLatch = CountDownLatch(1)
+
                 override fun onOpen(conn: WebSocket, handshake: ClientHandshake) {
+                    if (!handler.isOriginAllowed(handshake)) {
+                        conn.close(1008, "Origin not allowed")
+                        return
+                    }
                     handler.toolData.info("客户端连接: ${conn.remoteSocketAddress}")
                 }
 
                 override fun onMessage(conn: WebSocket, message: String) {
-                    handler.toolData.debug("收到消息: $message")
-                    conn.send("Echo: $message")
-                    handler.broadcast(handler.toolData.contentParsing(message))
+                    handler.toolData.debug("收到消息: ${message.take(240)}")
+                    if (!handler.isAuthorized(message)) {
+                        conn.send(handler.toolData.errorResponse("未授权的 WebSocket 请求"))
+                        return
+                    }
+                    conn.send(handler.toolData.contentParsing(message))
                 }
 
                 override fun onClose(conn: WebSocket, code: Int, reason: String, remote: Boolean) {
@@ -503,6 +666,7 @@ class JsonApi {
 
                 override fun onStart() {
                     handler.toolData.info("WebSocket 服务器已启动")
+                    startLatch.countDown()
                 }
             }
         }
@@ -527,33 +691,47 @@ data class WebSocketData(
 ) {
     init {
         if (!out && wsType.input.isNotEmpty()) {
-            val json = Json.parseToJsonElement(content)
+            val json = try {
+                Json.parseToJsonElement(content).jsonObject
+            } catch (e: Exception) {
+                throw IllegalArgumentException("content 必须是 JSON 对象: ${e.message}", e)
+            }
 
             for (i in wsType.input) {
+                val element = json[i.first] ?: throw IllegalArgumentException("缺少字段 ${i.first}")
                 val iData = Data()
                 when (i.second) {
                     DataType.String -> {
-                        iData.str = json.jsonObject[i.first]!!.jsonPrimitive.content
+                        iData.str = element.jsonPrimitive.content
                     }
 
                     DataType.Int -> {
-                        iData.int = json.jsonObject[i.first]!!.jsonPrimitive.content.toInt()
+                        iData.int = element.jsonPrimitive.content.toIntOrNull()
+                            ?: throw IllegalArgumentException("${i.first} 必须是 Int")
                     }
 
                     DataType.Float -> {
-                        iData.float = json.jsonObject[i.first]!!.jsonPrimitive.content.toFloat()
+                        iData.float = element.jsonPrimitive.content.toFloatOrNull()
+                            ?: throw IllegalArgumentException("${i.first} 必须是 Float")
                     }
 
                     DataType.List -> {
-                        val jsonArray = json.jsonObject[i.first]!!.jsonArray
+                        val jsonArray = element.jsonArray
                         iData.list = jsonArray.map { Data(str = it.jsonPrimitive.content) }.toMutableList() //[x1,x2]
                     }
 
                     DataType.Boolean -> {
-                        iData.boolean = json.jsonObject[i.first]!!.jsonPrimitive.content.toBoolean()
+                        iData.boolean = when (element.jsonPrimitive.content.lowercase()) {
+                            "true" -> true
+                            "false" -> false
+                            else -> throw IllegalArgumentException("${i.first} 必须是 Boolean")
+                        }
                     }
 
-                    DataType.Object -> TODO()
+                    DataType.Object -> {
+                        iData.json = element.toString()
+                        iData.obj = Data(str = element.toString(), json = element.toString())
+                    }
                 }
                 dataList[i.first] = iData
             }
@@ -578,6 +756,13 @@ data class WebSocketData(
 enum class WebSocketDataType(
     val input: List<Pair<String, DataType>> = listOf(), val output: List<Pair<String, DataType>> = listOf()
 ) {
+    Error(
+        output = listOf(
+            "Success" to DataType.Boolean,
+            "Message" to DataType.String,
+            "Source_Type" to DataType.String
+        )
+    ),
     Init(
         listOf("Data_Dir" to DataType.String), listOf(
             "Success" to DataType.Boolean, "Doc_Count" to DataType.Int, "Message" to DataType.String
@@ -650,6 +835,14 @@ enum class WebSocketDataType(
         listOf("Class_Id" to DataType.Int)
     ),
     RemoveClass(listOf("Class_Id" to DataType.Int), listOf("Success" to DataType.Boolean)),
+    FetchDoc(
+        listOf("Data_Dir" to DataType.String),
+        listOf(
+            "Success" to DataType.Boolean,
+            "Doc_Count" to DataType.Int,
+            "Message" to DataType.String
+        )
+    ),
 }
 
 enum class DataType {
@@ -663,183 +856,11 @@ data class Data(
     var float: Float = 0f,
     var list: MutableList<Data> = mutableListOf(),
     var boolean: Boolean = false,
-    var obj: Data? = null
+    var obj: Data? = null,
+    var json: String = ""
 )
 
-
-fun main(args: Array<String>) {
-    val dataDir = "C:\\Users\\Administrator\\Downloads\\test"
-        ?: System.getProperty("mindustrymit.dataDir")
-        ?: error("请传入真实数据目录，或设置 -Dmindustrymit.dataDir=<path>")
-    val port = args.getOrNull(1)?.toIntOrNull() ?: 19190
-    val preferredClassName = args.getOrNull(2)
-    val instancePath = args.getOrNull(3)?.split(",")?.filter { it.isNotBlank() }.orEmpty()
-    val instanceValue = args.getOrNull(4) ?: "test-value"
-
-    val toolData = JsonApi.ToolData().apply {
-        error = { println("[ERROR] $it") }
-        info = { println("[INFO] $it") }
-        warning = { println("[WARN] $it") }
-        debug = { println("[DEBUG] $it") }
-    }
-    val handler = JsonApi.ToolData.JsonApiWebSocketHandler(toolData, port)
-    val replies = LinkedBlockingQueue<String>()
-
-    fun assertTrue(name: String, value: Boolean) {
-        if (!value) throw IllegalStateException("测试失败: $name")
-        println("PASS: $name")
-    }
-
-    fun jsonString(value: String): String {
-        return buildString {
-            append('"')
-            value.forEach { ch ->
-                when (ch) {
-                    '\\' -> append("\\\\")
-                    '"' -> append("\\\"")
-                    '\n' -> append("\\n")
-                    '\r' -> append("\\r")
-                    '\t' -> append("\\t")
-                    else -> append(ch)
-                }
-            }
-            append('"')
-        }
-    }
-
-    fun pathJson(path: List<String>): String {
-        return path.joinToString(prefix = "[", postfix = "]") { jsonString(it) }
-    }
-
-    fun encode(type: WebSocketDataType, content: String = ""): String {
-        return jsonFormat.encodeToString(WebSocketData.serializer(), WebSocketData(type, content = content))
-    }
-
-    fun listOfData(reply: WebSocketData, key: String): List<String> {
-        return reply.dataList[key]?.list?.map { it.str }.orEmpty()
-    }
-
-    val client = object : WebSocketClient(URI("ws://localhost:$port")) {
-        override fun onOpen(handshakedata: ServerHandshake?) {
-            println("[CLIENT] connected")
-        }
-
-        override fun onMessage(message: String) {
-            if (!message.startsWith("Echo: ")) replies.offer(message)
-        }
-
-        override fun onClose(code: Int, reason: String?, remote: Boolean) {
-            println("[CLIENT] closed: code=$code, reason=$reason, remote=$remote")
-        }
-
-        override fun onError(ex: Exception) {
-            println("[CLIENT ERROR] ${ex.message}")
-        }
-    }
-
-    fun request(type: WebSocketDataType, content: String = ""): WebSocketData {
-        replies.clear()
-        client.send(encode(type, content))
-        val response = replies.poll(5, TimeUnit.SECONDS)
-            ?: throw IllegalStateException("等待 $type 回复超时")
-        return jsonFormat.decodeFromString(WebSocketData.serializer(), response)
-    }
-
-    fun hasRuntimeClass(className: String): Boolean {
-        return try {
-            toolData.parser.classMap?.get(className) != null ||
-                toolData.parser.classMap?.find { it.key == className }?.value != null
-        } catch (_: Throwable) {
-            false
-        }
-    }
-
-    handler.start()
-    try {
-        assertTrue("WebSocket 客户端连接成功", client.connectBlocking(5, TimeUnit.SECONDS))
-
-        val initReply = request(
-            WebSocketDataType.Init,
-            """{"Data_Dir":${jsonString(File(dataDir).absolutePath)}}"""
-        )
-        assertTrue("Init 成功", initReply.dataList["Success"]?.boolean == true)
-        println("Init message: ${initReply.dataList["Message"]?.str}")
-
-        val allClassReply = request(WebSocketDataType.AllClass)
-        val classNames = listOfData(allClassReply, "Class_List")
-        assertTrue("AllClass 返回非空列表", classNames.isNotEmpty())
-
-        var selectedClass = preferredClassName?.takeIf { it in classNames }
-        var selectedFields = emptyList<String>()
-        val candidates = if (selectedClass != null) listOf(selectedClass!!) else classNames
-        for (candidate in candidates) {
-            val fieldsReply = request(WebSocketDataType.AllField, """{"Class_Name":${jsonString(candidate)}}""")
-            val fields = listOfData(fieldsReply, "Field_List")
-            if (fields.isNotEmpty()) {
-                selectedClass = candidate
-                selectedFields = fields
-                break
-            }
-        }
-        assertTrue("AllField 返回非空字段列表", selectedClass != null && selectedFields.isNotEmpty())
-
-        val fieldName = selectedFields.first()
-        println("Selected class: $selectedClass")
-        println("Selected field: $fieldName")
-
-        val fieldDocReply = request(
-            WebSocketDataType.FieldDoc,
-            """{"Class_Name":${jsonString(selectedClass!!)},"Field_Name":${jsonString(fieldName)}}"""
-        )
-        assertTrue("FieldDoc 有回复", fieldDocReply.dataList.containsKey("Field_Doc"))
-
-        val defaultReply = request(
-            WebSocketDataType.FieldDefaultValue,
-            """{"Class_Name":${jsonString(selectedClass!!)},"Field_Name":${jsonString(fieldName)}}"""
-        )
-        assertTrue("FieldDefaultValue 有回复", defaultReply.dataList.containsKey("Default_Value"))
-
-        if (instancePath.isNotEmpty() && hasRuntimeClass(selectedClass!!)) {
-            val newClassReply = request(
-                WebSocketDataType.NewClass,
-                """{"Class_Name":${jsonString(selectedClass!!)}}"""
-            )
-            val classId = newClassReply.dataList["Class_Id"]?.int ?: -1
-            assertTrue("NewClass 返回有效 Class_Id", classId >= 0)
-
-            val setReply = request(
-                WebSocketDataType.SetFieldValue,
-                """
-                    {
-                        "Class_Id": $classId,
-                        "Field_Path": ${pathJson(instancePath)},
-                        "Value": ${jsonString(instanceValue)}
-                    }
-                """.trimIndent()
-            )
-            assertTrue("SetFieldValue 成功", setReply.dataList["Success"]?.boolean == true)
-
-            val getReply = request(
-                WebSocketDataType.GetFieldValue,
-                """
-                    {
-                        "Class_Id": $classId,
-                        "Field_Path": ${pathJson(instancePath)}
-                    }
-                """.trimIndent()
-            )
-            assertTrue("GetFieldValue 成功", getReply.dataList["Success"]?.boolean == true)
-
-            val exportReply = request(WebSocketDataType.ExportClass, """{"Class_Id":$classId}""")
-            assertTrue("ExportClass 成功", exportReply.dataList["Success"]?.boolean == true)
-        } else {
-            println("跳过实例/深层修改测试：未提供 Field_Path，或当前运行时没有真实 Mindustry/Arc 类映射。")
-            println("需要测试实例修改时，请用参数：<dataDir> <port> <className> <field,path,#0,...> <value>")
-        }
-
-        println("WebSocket 完整数据加载与元数据接口测试通过")
-    } finally {
-        if (client.isOpen) client.closeBlocking()
-        handler.stop()
-    }
+fun main() {
+    val t = JsonApi()
+    t.server.start()
 }

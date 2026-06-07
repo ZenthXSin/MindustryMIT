@@ -5,6 +5,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.InternalSerializationApi
 import mindustry.mod.ClassMap
 import java.io.File
+import java.lang.reflect.Modifier
 
 @OptIn(InternalSerializationApi::class)
 @Serializable
@@ -37,6 +38,9 @@ interface IJsonParser {
 
     // 所有类
     fun getAllClasses(): List<String>
+
+    // 运行时类
+    fun getClassByName(className: String): Class<*>?
     
     // 父类
     fun getParentType(className: String): String
@@ -57,11 +61,29 @@ open class JsonParser : IJsonParser {
     companion object {
         // JSON 格式
         val jsonFormat = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+
+        fun normalizeClassName(className: String): String {
+            return className.trim()
+                .substringAfterLast('.')
+                .substringAfterLast('$')
+        }
+    }
+
+    private fun classKeys(className: String): Set<String> {
+        val raw = className.trim()
+        val simple = normalizeClassName(raw)
+        return listOf(raw, simple).filter { it.isNotBlank() }.toSet()
+    }
+
+    private fun fieldKey(className: String): String {
+        return normalizeClassName(className)
     }
 
     // 字段默认值
     override fun getFieldDefaultValue(className: String, fieldName: String): String {
-        return fieldDocs[className]?.get(fieldName)?.defaultValue ?: "null"
+        return classKeys(className).firstNotNullOfOrNull { key ->
+            fieldDocs[key]?.get(fieldName)?.defaultValue
+        } ?: "null"
     }
 
     override fun getFieldDefaultValue(fieldName: String): List<String> {
@@ -76,30 +98,51 @@ open class JsonParser : IJsonParser {
     }
 
     override fun getFieldDoc(className: String, fieldName: String): String {
-        return fieldDocs[className]?.get(fieldName)?.notes ?: ""
+        return classKeys(className).firstNotNullOfOrNull { key ->
+            fieldDocs[key]?.get(fieldName)?.notes
+        } ?: ""
     }
 
     // 类文档
     override fun getClassDoc(className: String): String {
-        val meta = classDocs[className] ?: return ""
+        val meta = classKeys(className).firstNotNullOfOrNull { classDocs[it] } ?: return ""
         return "Type: ${meta.type}\nParent: ${meta.parentType}\nFields: ${meta.fields.size}"
     }
 
     // 所有字段
     override fun getAllFields(className: String): List<FieldMeta> {
-        classDocs[className]?.fields?.let { return it }
-        return classMap?.find { it.key == className }?.value?.declaredFields?.map { FieldMeta(it.name, it.type.name, "", "") } ?: emptyList()
+        classKeys(className).firstNotNullOfOrNull { classDocs[it]?.fields }?.let { return it }
+        return getClassByName(className)?.fields
+            ?.filter { it.isJsonVisibleField() }
+            ?.map { FieldMeta(it.name, it.type.name, "", "") }
+            ?: emptyList()
     }
 
     // 所有类
     override fun getAllClasses(): List<String> {
-        if (classDocs.isNotEmpty()) return classDocs.keys.toList()
-        return classMap?.map { it.key.toString() } ?: emptyList()
+        if (classDocs.isNotEmpty()) {
+            return classDocs.values
+                .distinctBy { normalizeClassName(it.type) }
+                .map { normalizeClassName(it.type) }
+                .sorted()
+        }
+        return classMap?.mapNotNull { it.key?.toString() }?.sorted() ?: emptyList()
+    }
+
+    override fun getClassByName(className: String): Class<*>? {
+        val keys = classKeys(className)
+        return classMap?.let { map ->
+            keys.firstNotNullOfOrNull { key -> map.get(key) }
+                ?: map.firstNotNullOfOrNull { entry ->
+                    val key = entry.key?.toString() ?: return@firstNotNullOfOrNull null
+                    if (key in keys || normalizeClassName(key) in keys) entry.value else null
+                }
+        }
     }
     
     // 父类
     override fun getParentType(className: String): String {
-        return classDocs[className]?.parentType ?: ""
+        return classKeys(className).firstNotNullOfOrNull { classDocs[it]?.parentType } ?: ""
     }
     
     /**
@@ -117,10 +160,12 @@ open class JsonParser : IJsonParser {
      * 索引类元数据
      */
     fun indexClassMeta(meta: TypeMeta) {
-        classDocs[meta.type] = meta
-        val fieldMap = fieldDocs.getOrPut(meta.type) { mutableMapOf() }
-        meta.fields.forEach { field ->
-            fieldMap[field.name] = field
+        classKeys(meta.type).forEach { key ->
+            classDocs[key] = meta
+            val fieldMap = fieldDocs.getOrPut(fieldKey(key)) { mutableMapOf() }
+            meta.fields.forEach { field ->
+                fieldMap[field.name] = field
+            }
         }
     }
 
@@ -158,4 +203,11 @@ open class JsonParser : IJsonParser {
             null
         }
     }
+}
+
+private fun java.lang.reflect.Field.isJsonVisibleField(): Boolean {
+    return !Modifier.isStatic(modifiers) &&
+        !Modifier.isTransient(modifiers) &&
+        !Modifier.isFinal(modifiers) &&
+        !isSynthetic
 }
