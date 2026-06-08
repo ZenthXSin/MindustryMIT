@@ -65,6 +65,29 @@ class JsonBackendTest {
     }
 
     @Test
+    fun docFieldsIncludeParentFields() {
+        val parser = JsonParser()
+        parser.indexClassMeta(
+            TypeMeta(
+                type = "BaseDocType",
+                parentType = "",
+                fields = listOf(FieldMeta("baseField", "String", "base-default", "base doc"))
+            )
+        )
+        parser.indexClassMeta(
+            TypeMeta(
+                type = "ChildDocType",
+                parentType = "BaseDocType",
+                fields = listOf(FieldMeta("childField", "String", "child-default", "child doc"))
+            )
+        )
+
+        assertEquals(listOf("baseField", "childField"), parser.getAllFields("ChildDocType").map { it.name })
+        assertEquals("base-default", parser.getFieldDefaultValue("ChildDocType", "baseField"))
+        assertEquals("base doc", parser.getFieldDoc("ChildDocType", "baseField"))
+    }
+
+    @Test
     fun malformedRequestReturnsErrorReply() {
         val toolData = JsonApi.ToolData()
         val raw = """{"wsType":"AllField","content":"{}","out":false,"dataList":{}}"""

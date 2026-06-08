@@ -11,13 +11,20 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.java_websocket.WebSocket
 import org.java_websocket.handshake.ClientHandshake
 import org.java_websocket.server.WebSocketServer
+import com.sun.net.httpserver.HttpExchange
+import com.sun.net.httpserver.HttpServer
 import java.io.File
+import java.awt.Desktop
 import java.net.InetSocketAddress
+import java.net.URI
+import java.nio.file.Files
+import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.ZipInputStream
+import kotlin.system.exitProcess
 
 
 /**
@@ -57,12 +64,16 @@ class JsonApi {
             println("Debug: $it")
         }
 
-        private data class InitResult(val success: Boolean, val docCount: Int, val message: String)
+        data class InitResult(val success: Boolean, val docCount: Int, val message: String)
 
         companion object {
             fun defaultDataRoot(): File {
                 return File(System.getProperty("mindustrymit.dataRoot", ".mindustrymit-data")).absoluteFile
             }
+        }
+
+        fun initialize(dataDirPath: String): InitResult {
+            return initBackend(dataDirPath)
         }
 
         private fun resolveDataDir(dataDirPath: String): File {
@@ -591,7 +602,14 @@ class JsonApi {
                 val s = Server(InetSocketAddress(bindHost, port), this)
                 server = s
                 s.start()
-                s.startLatch.await(10, TimeUnit.SECONDS)
+                if (!s.startLatch.await(10, TimeUnit.SECONDS)) {
+                    server = null
+                    throw IllegalStateException("WebSocket 服务器启动超时: $bindHost:$port")
+                }
+                s.startError?.let {
+                    server = null
+                    throw IllegalStateException("WebSocket 服务器启动失败: ${it.message}", it)
+                }
                 toolData.info("WebSocket 服务器启动在 $bindHost:$port")
             }
 
@@ -638,6 +656,8 @@ class JsonApi {
             class Server(address: InetSocketAddress, private val handler: JsonApiWebSocketHandler) :
                 WebSocketServer(address) {
                 val startLatch = CountDownLatch(1)
+                @Volatile
+                var startError: Exception? = null
 
                 override fun onOpen(conn: WebSocket, handshake: ClientHandshake) {
                     if (!handler.isOriginAllowed(handshake)) {
@@ -653,7 +673,9 @@ class JsonApi {
                         conn.send(handler.toolData.errorResponse("未授权的 WebSocket 请求"))
                         return
                     }
-                    conn.send(handler.toolData.contentParsing(message))
+                    val response = handler.toolData.contentParsing(message)
+                    conn.send(response)
+                    handler.toolData.debug("回复消息: $response")
                 }
 
                 override fun onClose(conn: WebSocket, code: Int, reason: String, remote: Boolean) {
@@ -661,6 +683,10 @@ class JsonApi {
                 }
 
                 override fun onError(conn: WebSocket?, ex: Exception) {
+                    if (conn == null) {
+                        startError = ex
+                        startLatch.countDown()
+                    }
                     handler.toolData.error("WebSocket 错误: ${ex.message}")
                 }
 
@@ -859,7 +885,6 @@ data class Data(
     var obj: Data? = null,
     var json: String = ""
 )
-
 fun main() {
     val t = JsonApi()
     t.server.start()

@@ -79,11 +79,52 @@ open class JsonParser : IJsonParser {
         return normalizeClassName(className)
     }
 
+    private fun classMeta(className: String): TypeMeta? {
+        return classKeys(className).firstNotNullOfOrNull { classDocs[it] }
+    }
+
+    private fun fieldMetaInHierarchy(
+        className: String,
+        fieldName: String,
+        visited: MutableSet<String> = mutableSetOf()
+    ): FieldMeta? {
+        val meta = classMeta(className) ?: return null
+        val key = normalizeClassName(meta.type)
+        if (!visited.add(key)) return null
+
+        classKeys(className).firstNotNullOfOrNull { currentKey ->
+            fieldDocs[fieldKey(currentKey)]?.get(fieldName)
+        }?.let { return it }
+
+        val parentType = meta.parentType.trim()
+        if (parentType.isBlank()) return null
+        return fieldMetaInHierarchy(parentType, fieldName, visited)
+    }
+
+    private fun allDocFields(
+        className: String,
+        visited: MutableSet<String> = mutableSetOf()
+    ): List<FieldMeta>? {
+        val meta = classMeta(className) ?: return null
+        val key = normalizeClassName(meta.type)
+        if (!visited.add(key)) return emptyList()
+
+        val fieldsByName = linkedMapOf<String, FieldMeta>()
+        val parentType = meta.parentType.trim()
+        if (parentType.isNotBlank()) {
+            allDocFields(parentType, visited).orEmpty().forEach { field ->
+                fieldsByName[field.name] = field
+            }
+        }
+        meta.fields.forEach { field ->
+            fieldsByName[field.name] = field
+        }
+        return fieldsByName.values.toList()
+    }
+
     // 字段默认值
     override fun getFieldDefaultValue(className: String, fieldName: String): String {
-        return classKeys(className).firstNotNullOfOrNull { key ->
-            fieldDocs[key]?.get(fieldName)?.defaultValue
-        } ?: "null"
+        return fieldMetaInHierarchy(className, fieldName)?.defaultValue ?: "null"
     }
 
     override fun getFieldDefaultValue(fieldName: String): List<String> {
@@ -98,20 +139,18 @@ open class JsonParser : IJsonParser {
     }
 
     override fun getFieldDoc(className: String, fieldName: String): String {
-        return classKeys(className).firstNotNullOfOrNull { key ->
-            fieldDocs[key]?.get(fieldName)?.notes
-        } ?: ""
+        return fieldMetaInHierarchy(className, fieldName)?.notes ?: ""
     }
 
     // 类文档
     override fun getClassDoc(className: String): String {
-        val meta = classKeys(className).firstNotNullOfOrNull { classDocs[it] } ?: return ""
+        val meta = classMeta(className) ?: return ""
         return "Type: ${meta.type}\nParent: ${meta.parentType}\nFields: ${meta.fields.size}"
     }
 
     // 所有字段
     override fun getAllFields(className: String): List<FieldMeta> {
-        classKeys(className).firstNotNullOfOrNull { classDocs[it]?.fields }?.let { return it }
+        allDocFields(className)?.let { return it }
         return getClassByName(className)?.fields
             ?.filter { it.isJsonVisibleField() }
             ?.map { FieldMeta(it.name, it.type.name, "", "") }
@@ -142,7 +181,7 @@ open class JsonParser : IJsonParser {
     
     // 父类
     override fun getParentType(className: String): String {
-        return classKeys(className).firstNotNullOfOrNull { classDocs[it]?.parentType } ?: ""
+        return classMeta(className)?.parentType ?: ""
     }
     
     /**
