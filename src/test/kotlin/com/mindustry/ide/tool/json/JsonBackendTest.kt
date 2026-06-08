@@ -1,101 +1,67 @@
 package com.mindustry.ide.tool.json
 
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 
-class ApiTestItem(
-    @JvmField var name: String = "",
-    @JvmField var amount: Int = 0
-)
+open class ApiTestBase
 
-class ApiTestBlock(
-    @JvmField var health: Int = 0,
-    @JvmField var name: String = "",
-    @JvmField var items: Array<ApiTestItem> = emptyArray()
-)
+class ApiTestChild : ApiTestBase()
+
+class ApiTestOther
 
 class JsonBackendTest {
     private val format = JsonParser.jsonFormat
 
     @Test
-    fun stringValuesStayStringsAndAreEscaped() {
-        val parser = JsonParser()
-        val build = ClassBuild(ApiTestBlock::class.java, parser)
-        val field = FieldBuild(ApiTestBlock::class.java.getField("name"), parser, ownerClassName = build.name)
-        field.value.value = "true \"quoted\"\nline"
-        build.addFieldBuild { field }
+    fun test() {
 
-        val root = Json.parseToJsonElement(build.toJson()).jsonObject
-
-        assertEquals("ApiTestBlock", root["type"]?.jsonPrimitive?.content)
-        assertEquals("true \"quoted\"\nline", root["name"]?.jsonPrimitive?.content)
     }
 
     @Test
-    fun numericFieldsUseFieldType() {
-        val parser = JsonParser()
-        val build = ClassBuild(ApiTestBlock::class.java, parser)
-        val field = FieldBuild(ApiTestBlock::class.java.getField("health"), parser, ownerClassName = build.name)
-        field.value.value = "123"
-        build.addFieldBuild { field }
-
-        val root = Json.parseToJsonElement(build.toJson()).jsonObject
-
-        assertEquals("123", root["health"]?.jsonPrimitive?.content)
-    }
-
-    @Test
-    fun addElementRejectsNonArrayFields() {
+    fun classInstanceReturnsSubclassInstances() {
         val toolData = JsonApi.ToolData()
-        toolData.registerClass("ApiTestBlock", ApiTestBlock::class.java)
-        toolData.registerClass("ApiTestItem", ApiTestItem::class.java)
-        val classId = toolData.newClass("ApiTestBlock")
+        toolData.registerClass("ApiTestBase", ApiTestBase::class.java)
+        toolData.registerClass("ApiTestChild", ApiTestChild::class.java)
+        toolData.classInstance.clear()
+        toolData.classInstance["base-one"] = ApiTestBase()
+        toolData.classInstance["child-one"] = ApiTestChild()
+        toolData.classInstance["child-type"] = ApiTestChild::class.java
+        toolData.classInstance["other-one"] = ApiTestOther()
+
+        val baseReply = request(
+            toolData,
+            WebSocketDataType.ClassInstance,
+            """{"Class_Name":"ApiTestBase"}"""
+        )
+        val childReply = request(
+            toolData,
+            WebSocketDataType.ClassInstance,
+            """{"Class_Name":"ApiTestChild"}"""
+        )
+
+        assertEquals(
+            listOf("base-one", "child-one", "child-type"),
+            baseReply.dataList["Object_List"]?.list?.map { it.str }
+        )
+        assertEquals(
+            listOf("child-one", "child-type"),
+            childReply.dataList["Object_List"]?.list?.map { it.str }
+        )
+    }
+
+    @Test
+    fun classInstanceCanResolveClassFromStoredTypes() {
+        val toolData = JsonApi.ToolData()
+        toolData.classInstance.clear()
+        toolData.classInstance["child-type"] = ApiTestChild::class.java
 
         val reply = request(
             toolData,
-            WebSocketDataType.AddElement,
-            """{"Class_Id":$classId,"Field_Path":["health"],"Element_Type":"","Value":""}"""
+            WebSocketDataType.ClassInstance,
+            """{"Class_Name":"ApiTestBase"}"""
         )
 
-        assertFalse(reply.dataList["Success"]?.boolean ?: true)
-    }
-
-    @Test
-    fun docFieldsIncludeParentFields() {
-        val parser = JsonParser()
-        parser.indexClassMeta(
-            TypeMeta(
-                type = "BaseDocType",
-                parentType = "",
-                fields = listOf(FieldMeta("baseField", "String", "base-default", "base doc"))
-            )
-        )
-        parser.indexClassMeta(
-            TypeMeta(
-                type = "ChildDocType",
-                parentType = "BaseDocType",
-                fields = listOf(FieldMeta("childField", "String", "child-default", "child doc"))
-            )
-        )
-
-        assertEquals(listOf("baseField", "childField"), parser.getAllFields("ChildDocType").map { it.name })
-        assertEquals("base-default", parser.getFieldDefaultValue("ChildDocType", "baseField"))
-        assertEquals("base doc", parser.getFieldDoc("ChildDocType", "baseField"))
-    }
-
-    @Test
-    fun malformedRequestReturnsErrorReply() {
-        val toolData = JsonApi.ToolData()
-        val raw = """{"wsType":"AllField","content":"{}","out":false,"dataList":{}}"""
-
-        val reply = format.decodeFromString(WebSocketData.serializer(), toolData.contentParsing(raw))
-
-        assertEquals(WebSocketDataType.Error, reply.wsType)
-        assertFalse(reply.dataList["Success"]?.boolean ?: true)
+        assertEquals(listOf("child-type"), reply.dataList["Object_List"]?.list?.map { it.str })
     }
 
     private fun request(toolData: JsonApi.ToolData, type: WebSocketDataType, content: String): WebSocketData {

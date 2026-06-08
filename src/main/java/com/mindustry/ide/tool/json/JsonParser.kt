@@ -150,22 +150,23 @@ open class JsonParser : IJsonParser {
 
     // 所有字段
     override fun getAllFields(className: String): List<FieldMeta> {
-        allDocFields(className)?.let { return it }
-        return getClassByName(className)?.fields
+        getClassByName(className)?.fields
             ?.filter { it.isJsonVisibleField() }
             ?.map { FieldMeta(it.name, it.type.name, "", "") }
-            ?: emptyList()
+            ?.let { return it }
+
+        return allDocFields(className) ?: emptyList()
     }
 
     // 所有类
     override fun getAllClasses(): List<String> {
-        if (classDocs.isNotEmpty()) {
-            return classDocs.values
-                .distinctBy { normalizeClassName(it.type) }
-                .map { normalizeClassName(it.type) }
-                .sorted()
-        }
-        return classMap?.mapNotNull { it.key?.toString() }?.sorted() ?: emptyList()
+        val runtimeClasses = classMap?.mapNotNull { it.key?.toString() }?.sorted().orEmpty()
+        if (runtimeClasses.isNotEmpty()) return runtimeClasses
+
+        return classDocs.values
+            .distinctBy { normalizeClassName(it.type) }
+            .map { normalizeClassName(it.type) }
+            .sorted()
     }
 
     override fun getClassByName(className: String): Class<*>? {

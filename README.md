@@ -1,641 +1,623 @@
-# MindustryMIT
+# Mindustry MIT 工具后端 API 文档
 
-MindustryMIT 当前后端是一个 Kotlin/JVM 工具库，用于辅助创建、编辑和导出 Mindustry Mod 的 JSON 配置。核心能力包括：
+## 概述
 
-- 读取 Mindustry/Arc 运行时类映射，查询类、字段和文档元数据。
-- 从本地文档 JSON 加载 `TypeMeta` / `FieldMeta`。
-- 用 `ClassBuild`、`FieldBuild`、`Value` 构建 Mindustry JSON。
-- 将已有 JSON 导入为可编辑的构建结构。
-- 通过 WebSocket 暴露后端编辑 API。
-- 从 Mindustry Wiki 抓取 Modding 类型文档。
+`JsonApi` 是一个基于 WebSocket 的后端服务，为 [Mindustry](https://mindustrygame.github.io/) 游戏的数据编辑提供反射式 JSON 操作能力。它允许客户端远程创建游戏数据类的实例、读取/修改字段值、管理数组元素，并支持文档自动抓取与字段注释查询。
 
-本文档只说明后端代码，不包含 `src/main/html` 前端目录。
+**主要特性**：
+- 通过 WebSocket 协议通信（默认端口 `19190`）
+- 支持动态创建游戏数据类实例（如 `Blocks`, `UnitTypes` 等）
+- 使用 JSON 路径表达式访问嵌套字段和数组元素
+- 内置文档提取（`FetchDoc`）与字段文档查询
+- 可选的 Token 认证与来源域校验
 
+---
 
-## WebSocket API
+## 快速开始
 
-### `JsonApi.ToolData`
+### 1. 运行环境
 
-`ToolData` 是 WebSocket 后端的主要状态容器。
+- JDK 11 或更高版本
+- Kotlin 1.9+ 运行时（项目已包含所需依赖）
+- 依赖库：`kotlinx-serialization`, `java-websocket`, `Java HTTP Server`
 
-主要状态：
-
-- `parser: JsonParser`
-- `classDataMap: MutableMap<Int, Tool>`
-- `classBuildMap: MutableMap<Int, ClassBuild>`
-- `registeredClasses: MutableMap<String, Class<*>>`
-- `nextId: Int`
-- 日志回调：`error`、`info`、`warning`、`debug`
-
-公开方法：
-
-| 方法 | 说明 |
-| --- | --- |
-| `registerClass(className, clazz)` | 手动注册类名到 `Class<*>`，适合测试或无 Mindustry 运行时的场景。 |
-| `newClass(className)` | 创建一个 `ClassBuild` 实例并返回自增 `Class_Id`。 |
-| `removeClass(classId)` | 删除对应实例，返回是否删除成功。 |
-| `contentParsing(message)` | 解析 `WebSocketData` 请求，执行对应 API，返回序列化后的 `WebSocketData` 响应。 |
-
-内部行为：
-
-- `Init` 会在 `Data_Dir/doc` 下寻找文档 JSON；没有文档时尝试从 classpath 中的 `doc.zip`、`docs.zip` 或 `mindustry-doc.zip` 解压。
-- `FetchDoc` 会创建 `DocFetch` 子类，把抓取结果写入 `Data_Dir/doc/<type>.json`。
-- 字段路径 `Field_Path` 使用字符串列表表示。字段名表示对象字段，`#数字` 表示数组元素，例如 `["items", "#0", "name"]`。
-- `GetFieldValue`、`SetFieldValue`、`AddElement`、`ExportClass` 会捕获异常并在响应里返回 `Success = false` 和 `Message`。
-- `NewClass` 当前未包裹异常，类名无法解析时会抛出异常。
-
-### `JsonApiWebSocketHandler`
-
-`JsonApi.ToolData.JsonApiWebSocketHandler` 封装 Java-WebSocket 服务端。
-
-| 方法 | 说明 |
-| --- | --- |
-| `start()` | 在指定端口启动服务端；如果已启动则只记录日志。 |
-| `stop()` | 停止服务端。 |
-| `broadcast(message)` | 向所有连接广播消息。 |
-
-服务端收到消息后会：
-
-1. 给当前连接发送 `Echo: <原消息>`。
-2. 调用 `toolData.contentParsing(message)`。
-3. 把响应广播给所有连接。
-
-### `WebSocketData`
-
-请求和响应统一使用 `WebSocketData`：
+### 2. 启动服务器
 
 ```kotlin
-@Serializable
-data class WebSocketData(
-    var wsType: WebSocketDataType,
-    var content: String = "",
-    var out: Boolean = false,
-    var dataList: MutableMap<String, Data> = mutableMapOf()
-)
-```
-
-规则：
-
-- 入站请求使用 `out = false`。
-- 如果 `wsType.input` 非空，构造时会从 `content` 解析对应字段并写入 `dataList`。
-- 响应应使用 `WebSocketData.reply(wsType, data)` 创建，此时 `out = true`，不会自动解析 `content`。
-- `DataType.Object` 当前仍是 `TODO()`，不要作为入站字段类型使用。
-
-`Data` 字段：
-
-| 字段 | 类型 |
-| --- | --- |
-| `str` | `String` |
-| `int` | `Int` |
-| `float` | `Float` |
-| `list` | `MutableList<Data>` |
-| `boolean` | `Boolean` |
-| `obj` | `Data?` |
-
-### 协议类型
-
-| 类型 | 输入 | 输出 |
-| --- | --- | --- |
-| `Init` | `Data_Dir: String` | `Success: Boolean`, `Doc_Count: Int`, `Message: String` |
-| `AllClass` | 无 | `Class_List: List` |
-| `AllField` | `Class_Name: String` | `Field_List: List` |
-| `FieldDoc` | `Class_Name: String`, `Field_Name: String` | `Field_Doc: String` |
-| `FieldDefaultValue` | `Class_Name: String`, `Field_Name: String` | `Default_Value: String` |
-| `GetFieldValue` | `Class_Id: Int`, `Field_Path: List` | `Success: Boolean`, `Value: String`, `Message: String` |
-| `SetFieldValue` | `Class_Id: Int`, `Field_Path: List`, `Value: String` | `Success: Boolean`, `Value: String`, `Message: String` |
-| `AddElement` | `Class_Id: Int`, `Field_Path: List`, `Element_Type: String`, `Value: String` | `Success: Boolean`, `Index: Int`, `Message: String` |
-| `ExportClass` | `Class_Id: Int` | `Success: Boolean`, `Content: String`, `Message: String` |
-| `NewClass` | `Class_Name: String` | `Class_Id: Int` |
-| `RemoveClass` | `Class_Id: Int` | `Success: Boolean` |
-| `FetchDoc` | `Data_Dir: String` | `Success: Boolean`, `Doc_Count: Int`, `Message: String` |
-
-
-## 环境与构建
-
-项目使用 Gradle Kotlin DSL：
-
-- Kotlin JVM：`2.3.21`
-- Kotlin serialization plugin：`2.2.10`
-- Shadow plugin：`8.3.6`
-- JDK：CI 使用 Temurin JDK 21
-- 根项目名：`tool`
-- Maven 坐标：`com.mindustry.ide:tool:<version>`
-- 默认版本：没有传入 `-Pversion` 时为 `0.0.0-SNAPSHOT`
-
-主要依赖：
-
-| 依赖 | 版本 | 用途 |
-| --- | --- | --- |
-| `com.github.Anuken.Mindustry:core` | `v157.4` | Mindustry 类型来源，`compileOnly` |
-| `com.github.Anuken.Arc:arc-core` | `v157.4` | Arc 数据结构和注解，`compileOnly` |
-| `kotlinx-serialization-json` | `1.11.0` | JSON 序列化 |
-| `kotlinx-coroutines-core` | `1.10.2` | 文档抓取并发 |
-| `jsoup` | `1.22.2` | Wiki HTML 解析 |
-| `Java-WebSocket` | `1.5.4` | WebSocket 服务端/客户端 |
-
-构建命令：
-
-```powershell
-.\gradlew.bat shadowJar
-.\gradlew.bat build
-```
-
-Linux/macOS：
-
-```bash
-./gradlew shadowJar
-./gradlew build
-```
-
-`build` 任务依赖 `shadowJar`。输出位于 `build/libs/`，shadow jar 使用空 classifier，文件名形如 `tool-<version>.jar`。
-
-## 目录结构
-
-```text
-src/main/java/com/mindustry/ide/tool/
-├── WorkFile.kt
-└── json/
-    ├── JsonApi.kt
-    ├── JsonEditorTool.kt
-    ├── JsonParser.kt
-    ├── JsonWorkFile.kt
-    └── libs/
-        ├── DocFetch.kt
-        └── TypeMap.kt
-```
-
-## 数据模型
-
-### `WorkFileData`
-
-`WorkFileData` 是工作文件的可序列化元数据，字段包括：
-
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `fileName` | `String` | 文件名 |
-| `creationTime` | `String` | 创建时间 |
-| `lastModifiedTime` | `String` | 最后修改时间 |
-| `filePath` | `String` | 完整路径 |
-| `description` | `String` | 描述 |
-| `fileSize` | `Long` | 文件大小 |
-| `fileExtension` | `String` | 扩展名 |
-| `content` | `String` | 文件内容 |
-| `relativePath` | `String` | 相对路径 |
-| `isHidden` | `Boolean` | 是否隐藏 |
-
-方法：
-
-- `toString(): String`：把当前 `WorkFileData` 编码为 JSON 字符串。
-
-### `WorkFile`
-
-`WorkFile` 是工作文件基类：
-
-```kotlin
-abstract class WorkFile(
-    var name: String,
-    var data: WorkFileData = WorkFileData()
-)
-```
-
-方法：
-
-| 方法 | 说明 |
-| --- | --- |
-| `load(json: String)` | 从 JSON 字符串反序列化 `WorkFileData` 并写入 `data`。 |
-| `update()` | 调用 `getContent()`，把返回值写入 `data.content`。 |
-| `getContent(): String` | 抽象方法，返回当前文件内容。 |
-| `import(content: String)` | 抽象方法，从外部内容导入工作文件状态。 |
-| `export(): String` | 抽象方法，导出文件内容。 |
-| `init()` | 抽象方法，初始化工作文件。 |
-
-## 文档解析
-
-### `FieldMeta` / `TypeMeta`
-
-位于 `com.mindustry.ide.tool.json`：
-
-```kotlin
-data class FieldMeta(
-    val name: String,
-    val type: String,
-    val defaultValue: String,
-    val notes: String
-)
-
-data class TypeMeta(
-    val type: String,
-    val parentType: String,
-    val fields: List<FieldMeta>
-)
-```
-
-`JsonParser` 使用这两个类型保存本地文档元数据。
-
-### `IJsonParser`
-
-`IJsonParser` 定义类和字段元数据查询接口：
-
-| 成员 | 说明 |
-| --- | --- |
-| `classMap` | Mindustry `ClassMap.classes`。普通 JVM 环境缺少 Mindustry 类时可能为 `null`。 |
-| `getFieldDefaultValue(className, fieldName)` | 查询指定类字段的默认值，查不到返回 `"null"`。 |
-| `getFieldDefaultValue(fieldName)` | 在全部已加载字段中查询同名字段默认值，查不到返回 `listOf("null")`。 |
-| `getFieldDoc(className, fieldName)` | 查询字段说明，查不到返回空字符串。 |
-| `getClassDoc(className)` | 查询类说明。当前实现返回类型、父类型和字段数量摘要。 |
-| `getAllFields(className)` | 查询字段列表；优先使用已加载文档，否则尝试反射运行时类。 |
-| `getAllClasses()` | 查询类名列表；优先使用已加载文档，否则使用 Mindustry `classMap`。 |
-| `getParentType(className)` | 查询父类型，查不到返回空字符串。 |
-| `load(file: File)` | 加载单个文档 JSON 或目录。 |
-
-### `JsonParser`
-
-`JsonParser` 是 `IJsonParser` 的默认实现。
-
-公开属性：
-
-- `classDocs: MutableMap<String, TypeMeta>`：按类名保存类文档。
-- `fieldDocs: MutableMap<String, MutableMap<String, FieldMeta>>`：按类名和字段名保存字段文档。
-- `classMap`：延迟读取 `mindustry.mod.ClassMap.classes`，捕获 `NoClassDefFoundError` 后返回 `null`。
-
-方法：
-
-| 方法 | 说明 |
-| --- | --- |
-| `parseJsonToMeta(json: String): TypeMeta?` | 把 JSON 字符串解析成 `TypeMeta`，失败返回 `null`。 |
-| `indexClassMeta(meta: TypeMeta)` | 把 `TypeMeta` 写入 `classDocs`，并把字段写入 `fieldDocs`。 |
-| `loadDocs(docPath: File): Int` | 加载一个 JSON 文件或递归加载目录下所有 `.json` 文件，返回成功加载数量。加载前会清空当前文档缓存。 |
-| `load(file: File): JsonElement?` | 文件不存在返回 `null`；目录会转交 `loadDocs()`；普通文件会解析 JSON、索引 `TypeMeta` 并返回 `JsonElement`。 |
-
-`JsonParser.Companion.jsonFormat` 配置了 `ignoreUnknownKeys = true`。
-
-## JSON 构建
-
-### 扩展方法
-
-`JsonWorkFile.kt` 中定义了几个辅助扩展：
-
-| 方法 | 说明 |
-| --- | --- |
-| `Field.isSeqOrArrayType()` | 判断字段是否为 `arc.struct.Seq`、Java 数组、`List` 或 `ArrayList`。 |
-| `Field.getSeqElementType()` | 解析数组或泛型集合的元素类型，解析失败返回 `null`。 |
-| `Field.isLikelyRequired()` | 根据 `transient/static/synthetic/final`、基础类型和 `@Nullable` 粗略判断字段是否可能必填。 |
-| `String.isBooleanString()` | 判断字符串是否为 `true` 或 `false`。 |
-| `String.isNumber()` | 判断字符串是否能转为 `Double`。 |
-
-### `JsonWorkFile`
-
-`JsonWorkFile` 继承 `WorkFile`，表示一个可导入、可导出的 Mindustry JSON 工作文件。
-
-构造参数：
-
-```kotlin
-class JsonWorkFile(
-    name: String,
-    val parser: IJsonParser
-) : WorkFile(name)
-```
-
-主要属性：
-
-- `classBuild: ClassBuild`：当前根类型构建对象，默认是 `mindustry.world.Block`。
-- `json1`：用于 pretty print 的 JSON 编码器，缩进为 4 个空格。
-
-方法：
-
-| 方法 | 说明 |
-| --- | --- |
-| `loadClassBuild(run)` | 从 `parser.classMap` 选择并设置根 `ClassBuild`，返回当前 `JsonWorkFile`。 |
-| `import(content)` | 把 JSON 对象导入为 `ClassBuild`。根节点必须是 JSON object；非法 JSON 会抛出 `IllegalArgumentException`。 |
-| `export()` | 等同于 `getContent()`。 |
-| `init()` | 重置为 `Block`，并设置 `WorkFileData(fileName = name, fileExtension = "json")`。 |
-| `getContent()` | 调用 `classBuild.toJson()` 并格式化。 |
-| `formatJson(json)` | 尝试格式化 JSON；解析失败时返回原字符串。 |
-| `toString()` | 把 `classBuild` 的元数据编码为 JSON。 |
-| `addFieldBuild(run)` | 使用当前 `classBuild` 创建并追加字段构建。 |
-
-导入行为：
-
-- `"type"` 字段用于解析类名；找不到时使用默认类型。
-- 普通 JSON 值写入 `FieldBuild.value.value`。
-- JSON object 会递归构建嵌套 `ClassBuild`。
-- JSON array 会尝试按字段元素类型构建 `elements`。
-- 嵌套数组当前不处理。
-
-### `ClassBuild`
-
-`ClassBuild` 表示一个类型实例或数组元素。
-
-主要属性：
-
-| 属性 | 说明 |
-| --- | --- |
-| `classData` | 对应的 Java/Kotlin `Class<*>`。 |
-| `parser` | 元数据查询器。 |
-| `name` | 默认是 `classData.simpleName`，导出时写入 `"type"`。 |
-| `doc` | 类文档摘要。 |
-| `parentType` | 父类型。 |
-| `fieldBuilds` | 已添加字段。 |
-| `value` | 叶子值；非空且不为 `"null"` 时会直接导出为 JSON 值。 |
-
-方法：
-
-| 方法 | 说明 |
-| --- | --- |
-| `removeFieldBuild(fieldName)` | 按字段名删除字段构建，返回是否删除成功。 |
-| `toJson()` | 导出 JSON。叶子值优先；没有字段时输出 `null`；有字段时输出包含 `"type"` 的对象。 |
-| `getMeta()` | 返回可序列化的 `ClassMeta`。 |
-| `getAllFields()` | 返回 `classData.fields`。 |
-| `getFieldByName(name)` | 从反射字段中按名称查询。 |
-| `getFieldBuildByName(name)` | 从已添加字段中按名称查询。 |
-| `addFieldBuild(run)` | 追加一个 `FieldBuild`。 |
-| `setFieldBuild(fieldBuild, run)` | 移除同名字段后追加新的字段构建。 |
-
-`ClassMeta` 字段：
-
-- `className`
-- `classSimpleName`
-- `doc`
-- `parentType`
-- `fields`
-- `value`
-
-### `FieldBuild`
-
-`FieldBuild` 表示一个字段及其值。
-
-构造参数：
-
-```kotlin
-class FieldBuild(
-    var field: Field,
-    val parser: IJsonParser,
-    var classData: Class<*> = field.type,
-    var doc: String = ""
-)
-```
-
-初始化行为：
-
-- `doc` 来自 `parser.getFieldDoc(classData.name, field.name)`。
-- 如果字段是数组或集合，会创建空 `elements`，并把 `typeValue` 设置为元素类型的 `ClassBuild`。
-- 默认值来自 `getDefaultForClass(field.type)`。
-
-方法：
-
-| 方法 | 说明 |
-| --- | --- |
-| `getMeta()` | 返回可序列化的 `FieldMeta`。 |
-| `toJson()` | 导出 `"fieldName": value` 片段。 |
-| `getDefaultForClass(clazz)` | 为基础类型返回默认字符串；未知类型返回 `"null"`。 |
-
-当前默认值覆盖：
-
-- `Int`、`Float`、`Double`、`Long`、`Short`、`Byte`：`"0"`
-- `Boolean`：`"false"`
-- `Char`：`"0"`
-- `String`：`""`
-- 其他类型：`"null"`
-
-### `Value<T>`
-
-`Value` 保存字段值、嵌套对象或数组元素。
-
-主要属性：
-
-- `value: String`：简单值。
-- `typeValue: T`：通常是嵌套的 `ClassBuild`。
-- `run: (Value<T>) -> String?`：自定义导出逻辑；返回非空时覆盖默认导出。
-- `elements: MutableList<ClassBuild>?`：数组或集合元素。
-
-方法：
-
-| 方法 | 说明 |
-| --- | --- |
-| `addElement(build)` | 初始化并追加数组元素。 |
-| `getMeta()` | 返回 `ValueMeta`。 |
-| `toJson()` | 导出 JSON 值。数组优先输出 `[]` 或元素列表；布尔和数字不加引号；普通字符串加引号；复杂类型转交 `ClassBuild.toJson()`。 |
-| `getString()` | 返回自定义字符串、简单值或嵌套类型字符串。 |
-| `getTypeValueMeta()` | 根据当前值返回元数据；数字目前归类为 `Int`。 |
-
-## 编辑封装
-
-### `JsonEditorTool`
-
-`JsonEditorTool` 是面向编辑流程的抽象封装。使用方必须实现日志方法：
-
-```kotlin
-abstract fun error(message: String)
-abstract fun info(message: String)
-abstract fun warning(message: String)
-abstract fun debug(message: String)
-```
-
-其他方法：
-
-| 方法 | 说明 |
-| --- | --- |
-| `getClassByName(name)` | 从 `parser.classMap` 查询类；找不到时记录错误并返回 `Nullable::class.java`。 |
-| `getClassBuildByName(name)` | 基于类名创建 `ClassBuild`。 |
-| `new(name, chooseClass)` | 创建 `JsonWorkFile`，从候选 `ClassData` 列表中选择根类型。 |
-| `addFieldBuild(choose, set)` | 从当前根类型字段候选中选择字段并追加。 |
-| `setFieldBuild(name, set)` | 修改已存在字段；字段不存在时记录错误。 |
-
-### `ClassData`
-
-`ClassData` 用于给 `JsonEditorTool.new()` 提供候选类信息：
-
-- `name`
-- `parser`
-- `doc`
-- `classData`
-
-初始化时会从 `parser.classMap` 读取类，失败时使用 `Nullable::class.java`。
-
-### `ClassBuild.addFieldBuild` 扩展
-
-```kotlin
-fun ClassBuild.addFieldBuild(
-    choose: List<FieldBuild>.() -> FieldBuild,
-    set: FieldBuild.() -> FieldBuild
-)
-```
-
-该扩展会把 `getAllFields()` 转成 `FieldBuild` 候选列表，先执行 `choose`，再执行 `set`，最后追加到当前 `ClassBuild`。
-
-## 文档抓取
-
-### `DocFetch`
-
-`DocFetch` 位于 `com.mindustry.ide.tool.json.libs`，用于从 Mindustry Wiki 抓取 Modding 文档并解析类型字段表。
-
-配置项：
-
-| 配置 | 默认值 | 说明 |
-| --- | --- | --- |
-| `ASYNC_LIMIT` | `12` | 并发数量 |
-| `DELAY_TIME_MS` | `1000L` | 请求间隔配置，当前抓取流程未直接使用 |
-| `ESTIMATE_TIME_MS` | `500L` | 单次请求估算时间 |
-| `TEST_AMOUNT` | `-1` | 测试数量配置，当前抓取流程未直接使用 |
-| `ONLY_TYPES` | `emptyList()` | 非空时只抓取指定类型 |
-| `BASE_URL` | `https://mindustrygame.github.io/wiki/` | Wiki 根地址 |
-| `CONNECT_TIMEOUT_MS` | `60000` | 连接超时 |
-| `READ_TIMEOUT_MS` | `60000` | 读取超时 |
-| `MAX_RETRIES` | `5` | 最大重试次数 |
-| `RETRY_DELAY_MS` | `3000L` | 重试间隔 |
-| `USE_PROXY` | `true` | 是否启用代理 |
-| `PROXY_HOST` | `127.0.0.1` | 代理主机 |
-| `PROXY_PORT` | `10090` | 代理端口 |
-
-方法：
-
-| 方法 | 说明 |
-| --- | --- |
-| `execute()` | 抓取 Modding 文档索引、过滤类型、并发解析元数据、调用 `saveTypeMeta()` 保存结果，返回成功的 `TypeMeta` 列表。 |
-| `setupProxy()` | 根据 `USE_PROXY` 设置 JVM HTTP/HTTPS 代理。 |
-| `saveTypeMeta(meta)` | 保存单个类型元数据。默认实现仍是 `TODO()`，直接使用会抛异常；需要子类覆盖。 |
-| `fetchAllMeta(docs)` | 按 `ASYNC_LIMIT` 并发抓取多个文档的 `TypeMeta`。 |
-| `updateProgress(current, total, success, failed)` | 更新进度回调并打印进度。 |
-| `fetchWithRetry(url, retries)` | 带重试的 HTTP GET，成功返回响应文本，失败返回 `null`。 |
-| `fetchTypeMeta(doc)` | 抓取单个 Wiki 文档页面并解析为 `TypeMeta`。 |
-| `fetchModdingDocs()` | 读取 `search/search_index.json`，筛选 location 包含 `Modding` 的文档。 |
-| `parseTable(table)` | 从 HTML 表格解析字段名、类型、默认值和说明。 |
-| `disableSslVerification()` | 禁用默认 SSL 校验。 |
-
-注意：
-
-- 构造 `DocFetch` 时会调用 `disableSslVerification()` 和 `setupProxy()`。
-- 默认代理是开启的；不需要代理时应先设置 `DocFetch.USE_PROXY = false`。
-- `JsonApi.FetchDoc` 使用匿名子类覆盖了 `saveTypeMeta()`，会把结果写到 `Data_Dir/doc`。
-
-### `TypeMap`
-
-`TypeMap` 根据 `IJsonParser` 建立类型名到 `Class<*>` 的映射：
-
-```kotlin
-class TypeMap(private val parser: IJsonParser) {
-    val types: MutableMap<String, Class<*>> = mutableMapOf()
+fun main() {
+    val api = JsonApi()
+    api.server.start()   // 启动 WebSocket 服务器
 }
 ```
 
-初始化时会加入：
+启动后服务器监听 `ws://127.0.0.1:19190`。可通过系统属性修改配置：
 
-- `String -> String::class.java`
-- `Boolean -> Boolean::class.java`
-- `Number -> Int/Float/Double/Long/Short`
-- `parser.classMap` 中的所有运行时类
+| 系统属性 | 说明 | 示例 |
+|----------|------|------|
+| `mindustrymit.dataRoot` | 数据根目录（文档存储位置） | `-Dmindustrymit.dataRoot=/path/to/data` |
+| `mindustrymit.wsToken` | WebSocket 认证 Token（可选） | `-Dmindustrymit.wsToken=mySecretToken` |
 
-注意：`Number` 这个 key 会被连续写入多次，最终保留最后一次写入的类型。
+### 3. 客户端连接示例（JavaScript）
 
-## 示例
+```javascript
+const ws = new WebSocket('ws://127.0.0.1:19190');
 
-### 加载文档元数据
+ws.onopen = () => {
+    console.log('已连接');
+    // 发送初始化请求
+    ws.send(JSON.stringify({
+        wsType: 'Init',
+        content: JSON.stringify({ Data_Dir: "mindustry_docs" })
+    }));
+};
 
-```kotlin
-import com.mindustry.ide.tool.json.JsonParser
-import java.io.File
-
-val parser = JsonParser()
-val count = parser.loadDocs(File("data/doc"))
-
-println("Loaded docs: $count")
-println(parser.getAllClasses())
-println(parser.getAllFields("Block"))
+ws.onmessage = (e) => {
+    const resp = JSON.parse(e.data);
+    console.log('收到响应:', resp);
+};
 ```
 
-### 创建并导出 JSON
+---
 
-```kotlin
-import com.mindustry.ide.tool.json.JsonEditorTool
-import com.mindustry.ide.tool.json.JsonParser
+## 协议规范
 
-val parser = JsonParser()
+### 消息格式
 
-val editor = object : JsonEditorTool(parser) {
-    override fun error(message: String) = println("[ERROR] $message")
-    override fun info(message: String) = println("[INFO] $message")
-    override fun warning(message: String) = println("[WARN] $message")
-    override fun debug(message: String) = println("[DEBUG] $message")
+所有 WebSocket 消息均为 JSON 对象，序列化/反序列化使用 `WebSocketData` 类定义。
+
+```typescript
+interface WebSocketData {
+    wsType: string;          // 消息类型，见下方枚举
+    content?: string;        // 当 out=false 时，存放请求参数的 JSON 字符串
+    out?: boolean;           // true: 响应消息（服务器发出）; false: 请求消息（客户端发出）
+    dataList?: Record<string, Data>;  // 结构化字段（响应时使用）
 }
+```
 
-val workFile = editor.new("my-block") {
-    first { it.name == "Block" }
+其中 `Data` 结构：
+
+```typescript
+interface Data {
+    str?: string;
+    int?: number;
+    float?: number;
+    list?: Data[];
+    boolean?: boolean;
+    obj?: Data;
+    json?: string;
 }
+```
 
-editor.addFieldBuild(
-    choose = { first { it.field.name == "health" } },
-    set = {
-        value.value = "100"
-        this
+### 消息类型 (`WebSocketDataType`)
+
+| 类型 | 方向 | 说明 |
+|------|------|------|
+| `Init` | 客户端→服务器 | 初始化数据目录，加载文档 |
+| `AllClass` | 客户端→服务器 | 获取所有已注册的类名列表 |
+| `AllField` | 客户端→服务器 | 获取某个类的所有字段名 |
+| `ClassInstance` | 客户端→服务器 | 获取指定类的预定义实例（如 Blocks.copper） |
+| `FieldDoc` | 客户端→服务器 | 获取字段的文档注释 |
+| `FieldDefaultValue` | 客户端→服务器 | 获取字段的默认值字符串 |
+| `GetFieldValue` | 客户端→服务器 | 读取指定路径的字段值 |
+| `SetFieldValue` | 客户端→服务器 | 设置指定路径的字段值 |
+| `AddElement` | 客户端→服务器 | 向数组/列表字段添加元素 |
+| `ExportClass` | 客户端→服务器 | 导出整个类实例的 JSON 表示 |
+| `NewClass` | 客户端→服务器 | 创建新的类实例（返回 Class_Id） |
+| `RemoveClass` | 客户端→服务器 | 删除已创建的类实例 |
+| `FetchDoc` | 客户端→服务器 | 从 Mindustry 源码提取文档并保存 |
+| `Error` | 服务器→客户端 | 错误响应 |
+
+---
+
+## 详细接口说明
+
+### 通用约定
+
+- **路径语法 (`Field_Path`)**  
+  使用字符串数组表示嵌套字段路径。例如访问 `content.buildings[0].health`：  
+  `["content", "buildings", "#0", "health"]`  
+  其中 `#0` 表示数组索引 0。
+
+- **Class_Id**  
+  通过 `NewClass` 创建实例后获得，后续操作需携带该 ID。
+
+- **响应中的 `Success` 字段**  
+  表示操作是否成功，失败时 `Message` 字段包含错误信息。
+
+---
+
+### 1. 初始化 `Init`
+
+加载指定目录下的 JSON 文档文件（字段注释等）。必须先调用此接口才能使用其他需要文档的功能。
+
+#### 请求
+
+```json
+{
+    "wsType": "Init",
+    "content": "{\"Data_Dir\":\"mindustry_docs\"}"
+}
+```
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `Data_Dir` | string | 文档子目录名（相对于数据根目录），留空则使用默认 |
+
+#### 响应
+
+```json
+{
+    "wsType": "Init",
+    "out": true,
+    "dataList": {
+        "Success": { "boolean": true },
+        "Doc_Count": { "int": 42 },
+        "Message": { "str": "Initialized from /path/to/docs" }
     }
-)
-
-println(workFile.export())
-```
-
-### 直接调用 WebSocket API 解析方法
-
-```kotlin
-import com.mindustry.ide.tool.json.JsonApi
-import com.mindustry.ide.tool.json.WebSocketData
-import com.mindustry.ide.tool.json.WebSocketDataType
-import com.mindustry.ide.tool.json.JsonParser.Companion.jsonFormat
-
-val toolData = JsonApi.ToolData()
-
-val request = jsonFormat.encodeToString(
-    WebSocketData.serializer(),
-    WebSocketData(
-        wsType = WebSocketDataType.AllField,
-        content = """{"Class_Name":"Block"}"""
-    )
-)
-
-val response = toolData.contentParsing(request)
-println(response)
-```
-
-### 启动 WebSocket 服务
-
-```kotlin
-import com.mindustry.ide.tool.json.JsonApi
-
-val toolData = JsonApi.ToolData().apply {
-    error = { println("[ERROR] $it") }
-    info = { println("[INFO] $it") }
-    warning = { println("[WARN] $it") }
-    debug = { println("[DEBUG] $it") }
 }
-
-val handler = JsonApi.ToolData.JsonApiWebSocketHandler(toolData, 19190)
-handler.start()
 ```
 
-## CI 与发布
+---
 
-仓库包含两个 GitHub Actions workflow：
+### 2. 获取所有类 `AllClass`
 
-- `.github/workflows/build.yml`
-  - 触发：Pull Request 到 `main`，或手动触发。
-  - 行为：使用 JDK 21 执行 `./gradlew shadowJar --no-daemon --stacktrace`，上传 `build/libs/*.jar`。
-- `.github/workflows/release.yml`
-  - 触发：推送到 `main`，或手动触发。
-  - 行为：根据最新 tag 和 `version_bump` 计算版本，构建 shadow jar，创建 GitHub Release，并执行 `./gradlew publish` 发布到 GitHub Packages。
+返回运行时 `classMap` 中的游戏类名列表；运行时类表不可用时回退到已加载文档中的类型名。
 
-发布到 GitHub Packages 依赖环境变量：
+#### 请求
 
-```text
-GITHUB_REPOSITORY
-GITHUB_ACTOR
-GITHUB_TOKEN
+```json
+{ "wsType": "AllClass" }
 ```
 
-## 当前限制
+#### 响应
 
-- Mindustry 和 Arc 是 `compileOnly` 依赖；普通 JVM 环境没有对应运行时时，`JsonParser.classMap` 可能为 `null`。
-- `DataType.Object` 尚未实现，入站 WebSocket 请求使用该类型会触发 `TODO()`。
-- `DocFetch.saveTypeMeta()` 默认仍是 `TODO()`，直接调用 `DocFetch.execute()` 前应覆盖保存逻辑。
-- `JsonWorkFile.import()` 不处理嵌套数组。
-- `FieldBuild.getDefaultForClass()` 只覆盖常见基础类型。
-- `Value.getTypeValueMeta()` 对数字字符串统一按 `Int` 生成元数据。
-- `JsonApi.ToolData.newClass()` 在类名无法解析时会抛异常；`contentParsing()` 中的 `NewClass` 分支当前未捕获该异常。
+```json
+{
+    "wsType": "AllClass",
+    "out": true,
+    "dataList": {
+        "Class_List": {
+            "list": [
+                { "str": "Blocks" },
+                { "str": "UnitTypes" },
+                ...
+            ]
+        }
+    }
+}
+```
+
+---
+
+### 3. 获取类的字段列表 `AllField`
+
+字段列表优先来自运行时 `classMap` 解析到的真实类反射字段；运行时类不可用时回退到已加载文档字段。
+
+#### 请求
+
+```json
+{
+    "wsType": "AllField",
+    "content": "{\"Class_Name\":\"Blocks\"}"
+}
+```
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `Class_Name` | string | 类名（例如 `Blocks`） |
+
+#### 响应
+
+```json
+{
+    "wsType": "AllField",
+    "out": true,
+    "dataList": {
+        "Field_List": {
+            "list": [
+                { "str": "copperWall" },
+                { "str": "coreShard" },
+                ...
+            ]
+        }
+    }
+}
+```
+
+---
+
+### 4. 创建类实例 `NewClass`
+
+创建一个新的空实例（所有字段为默认值）。
+
+#### 请求
+
+```json
+{
+    "wsType": "NewClass",
+    "content": "{\"Class_Name\":\"Blocks\"}"
+}
+```
+
+#### 响应
+
+```json
+{
+    "wsType": "NewClass",
+    "out": true,
+    "dataList": {
+        "Class_Id": { "int": 1 }
+    }
+}
+```
+
+之后使用该 `Class_Id` 进行读写操作。
+
+---
+
+### 5. 读取字段值 `GetFieldValue`
+
+#### 请求
+
+```json
+{
+    "wsType": "GetFieldValue",
+    "content": "{\"Class_Id\":1,\"Field_Path\":[\"copperWall\",\"health\"]}"
+}
+```
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `Class_Id` | int | 实例 ID |
+| `Field_Path` | string[] | 路径数组 |
+
+#### 响应（成功）
+
+```json
+{
+    "wsType": "GetFieldValue",
+    "out": true,
+    "dataList": {
+        "Success": { "boolean": true },
+        "Value": { "str": "{\"value\":120}" },
+        "Message": { "str": "" }
+    }
+}
+```
+
+> `Value` 字段返回的是该字段值的 JSON 字符串表示（例如数字、对象或数组）。
+
+---
+
+### 6. 设置字段值 `SetFieldValue`
+
+#### 请求
+
+```json
+{
+    "wsType": "SetFieldValue",
+    "content": "{\"Class_Id\":1,\"Field_Path\":[\"copperWall\",\"health\"],\"Value\":\"250\"}"
+}
+```
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `Value` | string | 新值的 JSON 字符串（数字、对象等） |
+
+#### 响应
+
+```json
+{
+    "wsType": "SetFieldValue",
+    "out": true,
+    "dataList": {
+        "Success": { "boolean": true },
+        "Value": { "str": "{\"value\":250}" },
+        "Message": { "str": "" }
+    }
+}
+```
+
+---
+
+### 7. 添加数组元素 `AddElement`
+
+向数组/列表字段追加元素（支持 `Array`, `Seq<T>`, `List<T>`）。
+
+#### 请求
+
+```json
+{
+    "wsType": "AddElement",
+    "content": "{\"Class_Id\":1,\"Field_Path\":[\"copperWall\",\"requirements\"],\"Element_Type\":\"ItemStack\",\"Value\":\"{\\\"item\\\":\\\"copper\\\",\\\"amount\\\":10}\"}"
+}
+```
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `Element_Type` | string | 元素类型类名（如果字段为泛型集合，可省略让系统推断） |
+| `Value` | string | 元素值的 JSON 字符串 |
+
+#### 响应
+
+```json
+{
+    "wsType": "AddElement",
+    "out": true,
+    "dataList": {
+        "Success": { "boolean": true },
+        "Index": { "int": 0 },
+        "Message": { "str": "" }
+    }
+}
+```
+
+新添加的元素索引在 `Index` 字段返回。
+
+---
+
+### 8. 导出实例 `ExportClass`
+
+获取整个类实例的完整 JSON 表示。
+
+#### 请求
+
+```json
+{
+    "wsType": "ExportClass",
+    "content": "{\"Class_Id\":1}"
+}
+```
+
+#### 响应
+
+```json
+{
+    "wsType": "ExportClass",
+    "out": true,
+    "dataList": {
+        "Success": { "boolean": true },
+        "Content": { "str": "{\"copperWall\":{\"health\":250,...}, ...}" },
+        "Message": { "str": "" }
+    }
+}
+```
+
+---
+
+### 9. 删除实例 `RemoveClass`
+
+#### 请求
+
+```json
+{
+    "wsType": "RemoveClass",
+    "content": "{\"Class_Id\":1}"
+}
+```
+
+#### 响应
+
+```json
+{
+    "wsType": "RemoveClass",
+    "out": true,
+    "dataList": {
+        "Success": { "boolean": true }
+    }
+}
+```
+
+---
+
+### 10. 获取字段文档 `FieldDoc`
+
+#### 请求
+
+```json
+{
+    "wsType": "FieldDoc",
+    "content": "{\"Class_Name\":\"Blocks\",\"Field_Name\":\"copperWall\"}"
+}
+```
+
+#### 响应
+
+```json
+{
+    "wsType": "FieldDoc",
+    "out": true,
+    "dataList": {
+        "Field_Doc": { "str": "A basic defensive wall made of copper." }
+    }
+}
+```
+
+---
+
+### 11. 获取预定义实例列表 `ClassInstance`
+
+某些类（如 `Blocks`）包含预定义的静态实例，此接口返回可用的实例名称。
+
+#### 请求
+
+```json
+{
+    "wsType": "ClassInstance",
+    "content": "{\"Class_Name\":\"Blocks\"}"
+}
+```
+
+#### 响应
+
+```json
+{
+    "wsType": "ClassInstance",
+    "out": true,
+    "dataList": {
+        "Object_List": {
+            "list": [
+                { "str": "Blocks.copperWall" },
+                { "str": "Blocks.coreShard" },
+                ...
+            ]
+        }
+    }
+}
+```
+
+---
+
+### 12. 抓取文档 `FetchDoc`
+
+从 Mindustry 源码中提取类型文档并保存到 `doc/` 子目录。
+
+#### 请求
+
+```json
+{
+    "wsType": "FetchDoc",
+    "content": "{\"Data_Dir\":\"mindustry_docs\"}"
+}
+```
+
+#### 响应
+
+```json
+{
+    "wsType": "FetchDoc",
+    "out": true,
+    "dataList": {
+        "Success": { "boolean": true },
+        "Doc_Count": { "int": 156 },
+        "Message": { "str": "Fetched 156 types to /path/to/docs" }
+    }
+}
+```
+
+---
+
+## 完整使用流程示例
+
+以下示例使用伪代码演示如何创建一个 `Blocks` 实例、修改其字段并导出。
+
+```javascript
+const ws = new WebSocket('ws://127.0.0.1:19190');
+let classId;
+
+ws.onopen = () => {
+    // 1. 初始化文档目录
+    ws.send(JSON.stringify({
+        wsType: 'Init',
+        content: JSON.stringify({ Data_Dir: 'mindustry_docs' })
+    }));
+};
+
+ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    switch (msg.wsType) {
+        case 'Init':
+            if (msg.dataList.Success.boolean) {
+                // 2. 创建 Blocks 实例
+                ws.send(JSON.stringify({
+                    wsType: 'NewClass',
+                    content: JSON.stringify({ Class_Name: 'Blocks' })
+                }));
+            }
+            break;
+        case 'NewClass':
+            classId = msg.dataList.Class_Id.int;
+            // 3. 设置字段值
+            ws.send(JSON.stringify({
+                wsType: 'SetFieldValue',
+                content: JSON.stringify({
+                    Class_Id: classId,
+                    Field_Path: ['copperWall', 'health'],
+                    Value: '500'
+                })
+            }));
+            break;
+        case 'SetFieldValue':
+            // 4. 导出结果
+            ws.send(JSON.stringify({
+                wsType: 'ExportClass',
+                content: JSON.stringify({ Class_Id: classId })
+            }));
+            break;
+        case 'ExportClass':
+            const exported = JSON.parse(msg.dataList.Content.str);
+            console.log('最终数据:', exported);
+            ws.close();
+            break;
+        case 'Error':
+            console.error('错误:', msg.dataList.Message.str);
+            break;
+    }
+};
+```
+
+---
+
+## 安全注意事项
+
+1. **默认认证**：若未设置系统属性 `mindustrymit.wsToken`，服务器接受任何客户端连接。生产环境务必设置 Token。
+
+2. **Token 使用**：每条消息需在顶层或 `content` 对象中包含 `Token` 字段，例如：
+   ```json
+   {
+       "wsType": "SetFieldValue",
+       "Token": "mySecretToken",
+       "content": "..."
+   }
+   ```
+
+3. **域白名单**：可通过修改代码中的 `allowedOrigins` 限制 WebSocket 握手时的 Origin 头。
+
+4. **路径遍历防护**：`Data_Dir` 参数会被限制在数据根目录内，但建议不要使用用户可控的绝对路径。
+
+5. **反射风险**：`NewClass` 只能创建预先注册的类（`Blocks`, `UnitTypes` 等白名单），不会加载任意外部类。
+
+---
+
+## 常见问题
+
+**Q: 启动时端口被占用怎么办？**  
+A: 修改 `JsonApiWebSocketHandler` 构造函数的 `port` 参数（默认 19190）。
+
+**Q: 文档目录没有内容怎么办？**  
+A: 首次使用需调用 `FetchDoc` 抓取文档，或手动将 `doc.zip` 解压到数据根目录下的 `doc/` 文件夹。
+
+**Q: 数组下标 `#-1` 是否支持？**  
+A: 不支持。只支持非负整数索引。
+
+**Q: 能否直接修改 Java 基本类型包装类的字段？**  
+A: 支持，但需注意 `Value` 必须是合法的 JSON 字面量（如 `"10"`、`"true"`）。
+
+**Q: 多个客户端同时操作同一 Class_Id 会冲突吗？**  
+A: 当前实现未加锁，并发写可能导致数据损坏。建议每个客户端使用独立的 Class_Id 或通过应用层加锁。
+
+---
+
+## 附录：支持的类白名单
+
+以下静态类中的字段会被注册为可创建的实例：
+
+- `mindustry.content.Blocks`
+- `mindustry.content.UnitTypes`
+- `mindustry.content.Fx`
+- `mindustry.content.Bullets`
+- `mindustry.content.Items`
+- `mindustry.content.Liquids`
+- `mindustry.content.Loadouts`
+- `mindustry.content.Planets`
+- `mindustry.content.SectorPresets`
+- `mindustry.content.StatusEffects`
+- `mindustry.content.Weathers`
+
+如需扩展其他类，需修改 `ToolData.initializeClassInstances()` 方法。
+
+---
+
+## 许可证
+
+本文档对应代码为项目内部使用，无特殊许可证说明。使用前请确保遵守 Mindustry 相关许可。

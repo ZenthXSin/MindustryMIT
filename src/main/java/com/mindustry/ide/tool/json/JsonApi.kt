@@ -13,18 +13,30 @@ import org.java_websocket.handshake.ClientHandshake
 import org.java_websocket.server.WebSocketServer
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
+import mindustry.content.Blocks
+import mindustry.content.Bullets
+import mindustry.content.UnitTypes
 import java.io.File
 import java.awt.Desktop
 import java.net.InetSocketAddress
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
+import java.lang.reflect.Modifier
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.ZipInputStream
 import kotlin.system.exitProcess
+import mindustry.content.Fx
+import mindustry.content.Items
+import mindustry.content.Liquids
+import mindustry.content.Loadouts
+import mindustry.content.Planets
+import mindustry.content.SectorPresets
+import mindustry.content.StatusEffects
+import mindustry.content.Weathers
 
 
 /**
@@ -47,6 +59,7 @@ class JsonApi {
     ) {
         val classDataMap: MutableMap<Int, Tool> = ConcurrentHashMap()
         val classBuildMap: MutableMap<Int, ClassBuild> = ConcurrentHashMap()
+        var classInstance: MutableMap<String, Any> = ConcurrentHashMap()
         private val registeredClasses: MutableMap<String, Class<*>> = ConcurrentHashMap()
         private val nextId: AtomicInteger = AtomicInteger()
         private val dataRoot: File = dataRoot.absoluteFile
@@ -90,6 +103,8 @@ class JsonApi {
         }
 
         private fun initBackend(dataDirPath: String): InitResult {
+            initializeClassInstances()
+
             if (dataDirPath.isBlank()) {
                 return InitResult(false, 0, "Data_Dir is empty")
             }
@@ -117,6 +132,7 @@ class JsonApi {
 
                 markerFile.writeText("docDir=${docDir.absolutePath}\ndocCount=$docCount\n", Charsets.UTF_8)
                 InitResult(true, docCount, "Initialized from ${docDir.absolutePath}")
+
             } catch (e: Exception) {
                 InitResult(false, 0, e.message ?: e::class.java.name)
             }
@@ -167,6 +183,73 @@ class JsonApi {
             registeredClasses[JsonParser.normalizeClassName(className)] = clazz
             registeredClasses[clazz.name] = clazz
             registeredClasses[clazz.simpleName] = clazz
+        }
+
+        private fun initializeClassInstances() {
+            classInstance.clear()
+            listOf(
+                Blocks::class.java,
+                UnitTypes::class.java,
+                Fx::class.java,
+                Bullets::class.java,
+                Items::class.java,
+                Liquids::class.java,
+                Loadouts::class.java,
+                Planets::class.java,
+                SectorPresets::class.java,
+                StatusEffects::class.java,
+                Weathers::class.java
+            ).forEach { source ->
+                source.fields
+                    .filter { Modifier.isStatic(it.modifiers) }
+                    .forEach { field ->
+                        val instance = runCatching { field.get(null) }.getOrNull() ?: field.type
+                        classInstance["${source.simpleName}.${field.name}"] = instance
+                    }
+            }
+        }
+
+        private fun classOfInstance(instance: Any): Class<*> {
+            return when (instance) {
+                is Class<*> -> instance
+                else -> instance.javaClass
+            }
+        }
+
+        private fun classHierarchy(clazz: Class<*>): Sequence<Class<*>> {
+            return generateSequence(clazz) { it.superclass }
+        }
+
+        private fun resolveClassFromInstances(className: String): Class<*>? {
+            val raw = className.trim()
+            val simple = JsonParser.normalizeClassName(raw)
+            return classInstance.values.asSequence()
+                .map { classOfInstance(it) }
+                .flatMap { classHierarchy(it) }
+                .firstOrNull { candidate ->
+                    candidate.name == raw ||
+                        candidate.simpleName == raw ||
+                        JsonParser.normalizeClassName(candidate.name) == simple ||
+                        JsonParser.normalizeClassName(candidate.simpleName) == simple
+                }
+        }
+
+        private fun resolveClassForInstances(className: String): Class<*> {
+            if (classInstance.isEmpty()) {
+                initializeClassInstances()
+            }
+            return runCatching { resolveClass(className) }
+                .getOrElse { original -> resolveClassFromInstances(className) ?: throw original }
+        }
+
+        fun getClassInstances(className: String): List<String> {
+            val targetClass = resolveClassForInstances(className)
+
+            return classInstance.entries.asSequence()
+                .filter { (_, instance) -> targetClass.isAssignableFrom(classOfInstance(instance)) }
+                .map { (name, _) -> name }
+                .sorted()
+                .toList()
         }
 
         fun newClass(className: String): Int {
@@ -273,6 +356,7 @@ class JsonApi {
                     t.field.value.elements = null
                     t.field.value.toJson()
                 }
+
                 is PathTarget.ElementTarget -> {
                     t.build.value = value
                     t.build.fieldBuilds.clear()
@@ -343,222 +427,232 @@ class JsonApi {
 
             return try {
                 when (data.wsType) {
-                WebSocketDataType.Error -> {
-                    errorResponse("Error 请求类型不能作为业务请求", WebSocketDataType.Error)
-                }
-
-                WebSocketDataType.Init -> {
-                    val dataDir = data.dataList["Data_Dir"]?.str ?: ""
-                    val result = initBackend(dataDir)
-                    val reply = WebSocketData.reply(
-                        WebSocketDataType.Init, mapOf(
-                            "Success" to Data(boolean = result.success),
-                            "Doc_Count" to Data(int = result.docCount),
-                            "Message" to Data(str = result.message)
-                        )
-                    )
-                    jsonFormat.encodeToString(WebSocketData.serializer(), reply)
-                }
-
-                WebSocketDataType.AllClass -> {
-                    val classList = parser.getAllClasses()
-                    val reply = WebSocketData.reply(
-                        WebSocketDataType.AllClass,
-                        mapOf("Class_List" to Data(list = classList.map { Data(str = it) }.toMutableList()))
-                    )
-                    jsonFormat.encodeToString(WebSocketData.serializer(), reply)
-                }
-
-                WebSocketDataType.AllField -> {
-                    val className = data.dataList["Class_Name"]?.str ?: ""
-                    val fields = parser.getAllFields(className).map { it.name }
-                    val reply = WebSocketData.reply(
-                        WebSocketDataType.AllField,
-                        mapOf("Field_List" to Data(list = fields.map { Data(str = it) }.toMutableList()))
-                    )
-                    jsonFormat.encodeToString(WebSocketData.serializer(), reply)
-                }
-
-                WebSocketDataType.FieldDoc -> {
-                    val className = data.dataList["Class_Name"]?.str ?: ""
-                    val fieldName = data.dataList["Field_Name"]?.str ?: ""
-                    val fieldDoc = parser.getFieldDoc(className, fieldName)
-                    val reply = WebSocketData.reply(
-                        WebSocketDataType.FieldDoc,
-                        mapOf("Field_Doc" to Data(str = fieldDoc))
-                    )
-                    jsonFormat.encodeToString(WebSocketData.serializer(), reply)
-                }
-
-                WebSocketDataType.FieldDefaultValue -> {
-                    val className = data.dataList["Class_Name"]?.str ?: ""
-                    val fieldName = data.dataList["Field_Name"]?.str ?: ""
-                    val defaultValue = parser.getFieldDefaultValue(className, fieldName)
-                    val reply = WebSocketData.reply(
-                        WebSocketDataType.FieldDefaultValue,
-                        mapOf("Default_Value" to Data(str = defaultValue))
-                    )
-                    jsonFormat.encodeToString(WebSocketData.serializer(), reply)
-                }
-
-                WebSocketDataType.GetFieldValue -> {
-                    val reply = try {
-                        val classId = data.dataList["Class_Id"]?.int ?: fail("Class_Id 不能为空")
-                        val value = getFieldValue(classId, parsePath(data))
-                        WebSocketData.reply(
-                            WebSocketDataType.GetFieldValue,
-                            mapOf(
-                                "Success" to Data(boolean = true),
-                                "Value" to Data(str = value),
-                                "Message" to Data()
-                            )
-                        )
-                    } catch (e: Exception) {
-                        WebSocketData.reply(
-                            WebSocketDataType.GetFieldValue,
-                            mapOf(
-                                "Success" to Data(boolean = false),
-                                "Value" to Data(),
-                                "Message" to Data(str = e.message ?: e::class.java.name)
-                            )
-                        )
+                    WebSocketDataType.Error -> {
+                        errorResponse("Error 请求类型不能作为业务请求", WebSocketDataType.Error)
                     }
-                    jsonFormat.encodeToString(WebSocketData.serializer(), reply)
-                }
 
-                WebSocketDataType.SetFieldValue -> {
-                    val reply = try {
-                        val classId = data.dataList["Class_Id"]?.int ?: fail("Class_Id 不能为空")
-                        val value = data.dataList["Value"]?.str ?: ""
-                        val jsonValue = setFieldValue(classId, parsePath(data), value)
-                        WebSocketData.reply(
-                            WebSocketDataType.SetFieldValue,
-                            mapOf(
-                                "Success" to Data(boolean = true),
-                                "Value" to Data(str = jsonValue),
-                                "Message" to Data()
+                    WebSocketDataType.Init -> {
+                        val dataDir = data.dataList["Data_Dir"]?.str ?: ""
+                        val result = initBackend(dataDir)
+                        val reply = WebSocketData.reply(
+                            WebSocketDataType.Init, mapOf(
+                                "Success" to Data(boolean = result.success),
+                                "Doc_Count" to Data(int = result.docCount),
+                                "Message" to Data(str = result.message)
                             )
                         )
-                    } catch (e: Exception) {
-                        WebSocketData.reply(
-                            WebSocketDataType.SetFieldValue,
-                            mapOf(
-                                "Success" to Data(boolean = false),
-                                "Value" to Data(),
-                                "Message" to Data(str = e.message ?: e::class.java.name)
-                            )
-                        )
+                        jsonFormat.encodeToString(WebSocketData.serializer(), reply)
                     }
-                    jsonFormat.encodeToString(WebSocketData.serializer(), reply)
-                }
 
-                WebSocketDataType.AddElement -> {
-                    val reply = try {
-                        val classId = data.dataList["Class_Id"]?.int ?: fail("Class_Id 不能为空")
-                        val elementType = data.dataList["Element_Type"]?.str ?: ""
-                        val value = data.dataList["Value"]?.str ?: ""
-                        val index = addElement(classId, parsePath(data), elementType, value)
-                        WebSocketData.reply(
-                            WebSocketDataType.AddElement,
-                            mapOf(
-                                "Success" to Data(boolean = true),
-                                "Index" to Data(int = index),
-                                "Message" to Data()
-                            )
+                    WebSocketDataType.AllClass -> {
+                        val classList = parser.getAllClasses()
+                        val reply = WebSocketData.reply(
+                            WebSocketDataType.AllClass,
+                            mapOf("Class_List" to Data(list = classList.map { Data(str = it) }.toMutableList()))
                         )
-                    } catch (e: Exception) {
-                        WebSocketData.reply(
-                            WebSocketDataType.AddElement,
-                            mapOf(
-                                "Success" to Data(boolean = false),
-                                "Index" to Data(int = -1),
-                                "Message" to Data(str = e.message ?: e::class.java.name)
-                            )
-                        )
+                        jsonFormat.encodeToString(WebSocketData.serializer(), reply)
                     }
-                    jsonFormat.encodeToString(WebSocketData.serializer(), reply)
-                }
 
-                WebSocketDataType.ExportClass -> {
-                    val reply = try {
-                        val classId = data.dataList["Class_Id"]?.int ?: fail("Class_Id 不能为空")
-                        WebSocketData.reply(
-                            WebSocketDataType.ExportClass,
-                            mapOf(
-                                "Success" to Data(boolean = true),
-                                "Content" to Data(str = exportClass(classId)),
-                                "Message" to Data()
-                            )
+                    WebSocketDataType.AllField -> {
+                        val className = data.dataList["Class_Name"]?.str ?: ""
+                        val fields = parser.getAllFields(className).map { it.name }
+                        val reply = WebSocketData.reply(
+                            WebSocketDataType.AllField,
+                            mapOf("Field_List" to Data(list = fields.map { Data(str = it) }.toMutableList()))
                         )
-                    } catch (e: Exception) {
-                        WebSocketData.reply(
-                            WebSocketDataType.ExportClass,
-                            mapOf(
-                                "Success" to Data(boolean = false),
-                                "Content" to Data(),
-                                "Message" to Data(str = e.message ?: e::class.java.name)
-                            )
-                        )
+                        jsonFormat.encodeToString(WebSocketData.serializer(), reply)
                     }
-                    jsonFormat.encodeToString(WebSocketData.serializer(), reply)
-                }
 
-                WebSocketDataType.NewClass -> {
-                    val className = data.dataList["Class_Name"]?.str ?: ""
-                    val classId = newClass(className)
-
-                    jsonFormat.encodeToString(
-                        WebSocketData.serializer(), WebSocketData.reply(
-                            WebSocketDataType.NewClass, mapOf("Class_Id" to Data(int = classId))
+                    WebSocketDataType.ClassInstance -> {
+                        val className = data.dataList["Class_Name"]?.str ?: ""
+                        val objects = getClassInstances(className)
+                        val reply = WebSocketData.reply(
+                            WebSocketDataType.ClassInstance,
+                            mapOf("Object_List" to Data(list = objects.map { Data(str = it) }.toMutableList()))
                         )
-                    )
-                }
+                        jsonFormat.encodeToString(WebSocketData.serializer(), reply)
+                    }
 
-                WebSocketDataType.RemoveClass -> {
-                    val classId = data.dataList["Class_Id"]?.int
-                    val success = classId != null && removeClass(classId)
-
-                    jsonFormat.encodeToString(
-                        WebSocketData.serializer(), WebSocketData.reply(
-                            WebSocketDataType.RemoveClass, mapOf("Success" to Data(boolean = success))
+                    WebSocketDataType.FieldDoc -> {
+                        val className = data.dataList["Class_Name"]?.str ?: ""
+                        val fieldName = data.dataList["Field_Name"]?.str ?: ""
+                        val fieldDoc = parser.getFieldDoc(className, fieldName)
+                        val reply = WebSocketData.reply(
+                            WebSocketDataType.FieldDoc,
+                            mapOf("Field_Doc" to Data(str = fieldDoc))
                         )
-                    )
-                }
+                        jsonFormat.encodeToString(WebSocketData.serializer(), reply)
+                    }
 
-                WebSocketDataType.FetchDoc -> {
-                    val dataDirPath = data.dataList["Data_Dir"]?.str ?: ""
-                    val reply = try {
-                        val docDir = File(resolveDataDir(dataDirPath), "doc").canonicalFile
-                        docDir.mkdirs()
-                        val fetcher = object : com.mindustry.ide.tool.json.libs.DocFetch() {
-                            override fun saveTypeMeta(meta: TypeMeta) {
-                                val file = File(docDir, "${safeDocFileName(meta.type)}.json")
-                                file.writeText(
-                                    json1
-                                        .encodeToString(TypeMeta.serializer(), meta),
-                                    Charsets.UTF_8
+                    WebSocketDataType.FieldDefaultValue -> {
+                        val className = data.dataList["Class_Name"]?.str ?: ""
+                        val fieldName = data.dataList["Field_Name"]?.str ?: ""
+                        val defaultValue = parser.getFieldDefaultValue(className, fieldName)
+                        val reply = WebSocketData.reply(
+                            WebSocketDataType.FieldDefaultValue,
+                            mapOf("Default_Value" to Data(str = defaultValue))
+                        )
+                        jsonFormat.encodeToString(WebSocketData.serializer(), reply)
+                    }
+
+                    WebSocketDataType.GetFieldValue -> {
+                        val reply = try {
+                            val classId = data.dataList["Class_Id"]?.int ?: fail("Class_Id 不能为空")
+                            val value = getFieldValue(classId, parsePath(data))
+                            WebSocketData.reply(
+                                WebSocketDataType.GetFieldValue,
+                                mapOf(
+                                    "Success" to Data(boolean = true),
+                                    "Value" to Data(str = value),
+                                    "Message" to Data()
                                 )
-                            }
-                        }
-                        val results = kotlinx.coroutines.runBlocking { fetcher.execute() }
-                        WebSocketData.reply(
-                            WebSocketDataType.FetchDoc, mapOf(
-                                "Success" to Data(boolean = results.isNotEmpty()),
-                                "Doc_Count" to Data(int = results.size),
-                                "Message" to Data(str = "Fetched ${results.size} types to ${docDir.absolutePath}")
                             )
-                        )
-                    } catch (e: Exception) {
-                        WebSocketData.reply(
-                            WebSocketDataType.FetchDoc, mapOf(
-                                "Success" to Data(boolean = false),
-                                "Doc_Count" to Data(int = 0),
-                                "Message" to Data(str = e.message ?: e::class.java.name)
+                        } catch (e: Exception) {
+                            WebSocketData.reply(
+                                WebSocketDataType.GetFieldValue,
+                                mapOf(
+                                    "Success" to Data(boolean = false),
+                                    "Value" to Data(),
+                                    "Message" to Data(str = e.message ?: e::class.java.name)
+                                )
+                            )
+                        }
+                        jsonFormat.encodeToString(WebSocketData.serializer(), reply)
+                    }
+
+                    WebSocketDataType.SetFieldValue -> {
+                        val reply = try {
+                            val classId = data.dataList["Class_Id"]?.int ?: fail("Class_Id 不能为空")
+                            val value = data.dataList["Value"]?.str ?: ""
+                            val jsonValue = setFieldValue(classId, parsePath(data), value)
+                            WebSocketData.reply(
+                                WebSocketDataType.SetFieldValue,
+                                mapOf(
+                                    "Success" to Data(boolean = true),
+                                    "Value" to Data(str = jsonValue),
+                                    "Message" to Data()
+                                )
+                            )
+                        } catch (e: Exception) {
+                            WebSocketData.reply(
+                                WebSocketDataType.SetFieldValue,
+                                mapOf(
+                                    "Success" to Data(boolean = false),
+                                    "Value" to Data(),
+                                    "Message" to Data(str = e.message ?: e::class.java.name)
+                                )
+                            )
+                        }
+                        jsonFormat.encodeToString(WebSocketData.serializer(), reply)
+                    }
+
+                    WebSocketDataType.AddElement -> {
+                        val reply = try {
+                            val classId = data.dataList["Class_Id"]?.int ?: fail("Class_Id 不能为空")
+                            val elementType = data.dataList["Element_Type"]?.str ?: ""
+                            val value = data.dataList["Value"]?.str ?: ""
+                            val index = addElement(classId, parsePath(data), elementType, value)
+                            WebSocketData.reply(
+                                WebSocketDataType.AddElement,
+                                mapOf(
+                                    "Success" to Data(boolean = true),
+                                    "Index" to Data(int = index),
+                                    "Message" to Data()
+                                )
+                            )
+                        } catch (e: Exception) {
+                            WebSocketData.reply(
+                                WebSocketDataType.AddElement,
+                                mapOf(
+                                    "Success" to Data(boolean = false),
+                                    "Index" to Data(int = -1),
+                                    "Message" to Data(str = e.message ?: e::class.java.name)
+                                )
+                            )
+                        }
+                        jsonFormat.encodeToString(WebSocketData.serializer(), reply)
+                    }
+
+                    WebSocketDataType.ExportClass -> {
+                        val reply = try {
+                            val classId = data.dataList["Class_Id"]?.int ?: fail("Class_Id 不能为空")
+                            WebSocketData.reply(
+                                WebSocketDataType.ExportClass,
+                                mapOf(
+                                    "Success" to Data(boolean = true),
+                                    "Content" to Data(str = exportClass(classId)),
+                                    "Message" to Data()
+                                )
+                            )
+                        } catch (e: Exception) {
+                            WebSocketData.reply(
+                                WebSocketDataType.ExportClass,
+                                mapOf(
+                                    "Success" to Data(boolean = false),
+                                    "Content" to Data(),
+                                    "Message" to Data(str = e.message ?: e::class.java.name)
+                                )
+                            )
+                        }
+                        jsonFormat.encodeToString(WebSocketData.serializer(), reply)
+                    }
+
+                    WebSocketDataType.NewClass -> {
+                        val className = data.dataList["Class_Name"]?.str ?: ""
+                        val classId = newClass(className)
+
+                        jsonFormat.encodeToString(
+                            WebSocketData.serializer(), WebSocketData.reply(
+                                WebSocketDataType.NewClass, mapOf("Class_Id" to Data(int = classId))
                             )
                         )
                     }
-                    jsonFormat.encodeToString(WebSocketData.serializer(), reply)
-                }
+
+                    WebSocketDataType.RemoveClass -> {
+                        val classId = data.dataList["Class_Id"]?.int
+                        val success = classId != null && removeClass(classId)
+
+                        jsonFormat.encodeToString(
+                            WebSocketData.serializer(), WebSocketData.reply(
+                                WebSocketDataType.RemoveClass, mapOf("Success" to Data(boolean = success))
+                            )
+                        )
+                    }
+
+                    WebSocketDataType.FetchDoc -> {
+                        val dataDirPath = data.dataList["Data_Dir"]?.str ?: ""
+                        val reply = try {
+                            val docDir = File(resolveDataDir(dataDirPath), "doc").canonicalFile
+                            docDir.mkdirs()
+                            val fetcher = object : com.mindustry.ide.tool.json.libs.DocFetch() {
+                                override fun saveTypeMeta(meta: TypeMeta) {
+                                    val file = File(docDir, "${safeDocFileName(meta.type)}.json")
+                                    file.writeText(
+                                        json1
+                                            .encodeToString(TypeMeta.serializer(), meta),
+                                        Charsets.UTF_8
+                                    )
+                                }
+                            }
+                            val results = kotlinx.coroutines.runBlocking { fetcher.execute() }
+                            WebSocketData.reply(
+                                WebSocketDataType.FetchDoc, mapOf(
+                                    "Success" to Data(boolean = results.isNotEmpty()),
+                                    "Doc_Count" to Data(int = results.size),
+                                    "Message" to Data(str = "Fetched ${results.size} types to ${docDir.absolutePath}")
+                                )
+                            )
+                        } catch (e: Exception) {
+                            WebSocketData.reply(
+                                WebSocketDataType.FetchDoc, mapOf(
+                                    "Success" to Data(boolean = false),
+                                    "Doc_Count" to Data(int = 0),
+                                    "Message" to Data(str = e.message ?: e::class.java.name)
+                                )
+                            )
+                        }
+                        jsonFormat.encodeToString(WebSocketData.serializer(), reply)
+                    }
 
 
                 }
@@ -656,6 +750,7 @@ class JsonApi {
             class Server(address: InetSocketAddress, private val handler: JsonApiWebSocketHandler) :
                 WebSocketServer(address) {
                 val startLatch = CountDownLatch(1)
+
                 @Volatile
                 var startError: Exception? = null
 
@@ -798,6 +893,10 @@ enum class WebSocketDataType(
         listOf("Class_Name" to DataType.String),
         listOf("Field_List" to DataType.List)
     ),
+    ClassInstance(
+        listOf("Class_Name" to DataType.String),
+        listOf("Object_List" to DataType.List)
+    ),
     FieldDoc(
         listOf(
             "Class_Name" to DataType.String,
@@ -885,6 +984,7 @@ data class Data(
     var obj: Data? = null,
     var json: String = ""
 )
+
 fun main() {
     val t = JsonApi()
     t.server.start()
