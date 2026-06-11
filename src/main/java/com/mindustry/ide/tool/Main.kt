@@ -1,0 +1,22 @@
+package com.mindustry.ide.tool
+
+import com.mindustry.ide.tool.json.JsonApi
+
+/**
+ * MindustryMIT 程序入口
+ * @author ZenXSin
+ */
+fun main(args: Array<String>) {
+    println("MindustryMIT - Mindustry 图形化模组编辑器后端")
+    println("正在启动 WebSocket 服务器...")
+
+    val api = JsonApi()
+    api.server.start()
+
+    println("服务器已启动，按 Ctrl+C 停止")
+    Runtime.getRuntime().addShutdownHook(Thread {
+        println("正在停止服务器...")
+        api.server.stop()
+        println("服务器已停止")
+    })
+}
