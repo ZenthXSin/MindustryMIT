@@ -3,6 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.jvm") version "2.3.21"
     kotlin("plugin.serialization") version "2.2.10"
     id("com.gradleup.shadow") version "8.3.6"
+    `application`
     `maven-publish`
 }
 
@@ -40,6 +41,10 @@ dependencies {
 group = "com.mindustry.ide"
 version = project.findProperty("version")?.toString() ?: "0.0.0-SNAPSHOT"
 
+application {
+    mainClass.set("com.mindustry.ide.tool.MainKt")
+}
+
 tasks.withType<JavaExec> {
     jvmArgs("-Dfile.encoding=UTF-8", "-Dstdout.encoding=UTF-8", "-Dstderr.encoding=UTF-8")
 }
@@ -47,6 +52,9 @@ tasks.withType<JavaExec> {
 tasks.jar {
     archiveBaseName.set("tool")
     archiveVersion.set(project.version.toString())
+    manifest {
+        attributes("Main-Class" to "com.mindustry.ide.tool.MainKt")
+    }
 }
 
 tasks.shadowJar {
@@ -54,6 +62,9 @@ tasks.shadowJar {
     archiveVersion.set(project.version.toString())
     archiveClassifier.set("")
     mergeServiceFiles()
+    manifest {
+        attributes("Main-Class" to "com.mindustry.ide.tool.MainKt")
+    }
 }
 
 tasks.build {
