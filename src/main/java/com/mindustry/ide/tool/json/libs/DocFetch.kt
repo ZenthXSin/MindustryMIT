@@ -13,6 +13,7 @@ import org.jsoup.nodes.Element
 import java.net.HttpURLConnection
 import java.net.InetSocketAddress
 import java.net.Proxy
+import java.net.URI
 import java.net.URL
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -196,7 +197,7 @@ open class DocFetch(private val config: DocFetchConfig = DocFetchConfig()) {
 
     protected open suspend fun fetchTypeMeta(doc: WikiDoc): TypeMeta? {
         return try {
-            val response = fetchWithRetry(URL(URL(config.baseUrl), doc.location)) ?: return null
+            val response = fetchWithRetry(URI(config.baseUrl).resolve(doc.location).toURL()) ?: return null
             val dom = Jsoup.parse(response)
 
             val extendElem = dom.selectFirst("em a") ?: return null
@@ -214,7 +215,7 @@ open class DocFetch(private val config: DocFetchConfig = DocFetchConfig()) {
 
     protected open suspend fun fetchModdingDocs(): List<WikiDoc> {
         return try {
-            val response = fetchWithRetry(URL(URL(config.baseUrl), "search/search_index.json")) ?: return emptyList()
+            val response = fetchWithRetry(URI(config.baseUrl).resolve("search/search_index.json").toURL()) ?: return emptyList()
             val json = Json {
                 ignoreUnknownKeys = true
             }

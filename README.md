@@ -266,11 +266,26 @@ interface Data {
 
 返回运行时 `classMap` 中的游戏类名列表；运行时类表不可用时回退到已加载文档中的类型名。
 
-#### 请求
+支持可选的 `Parent_Class` 参数，传入后只返回该父类的子类（含父类自身）。
+
+#### 请求（获取全部类）
 
 ```json
 { "wsType": "AllClass" }
 ```
+
+#### 请求（过滤父类）
+
+```json
+{
+    "wsType": "AllClass",
+    "content": "{\"Parent_Class\":\"Block\"}"
+}
+```
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `Parent_Class` | string（可选） | 父类名（简单名或全限定名）；不传时返回全部类 |
 
 #### 响应
 
@@ -394,7 +409,9 @@ interface Data {
 
 ### 6. 设置字段值 `SetFieldValue`
 
-#### 请求
+支持两种方式设置字段值：传字符串或引用已有 `ClassBuild` 实例（通过 `Value_Class_Id`）。
+
+#### 请求（字符串值）
 
 ```json
 {
@@ -403,9 +420,21 @@ interface Data {
 }
 ```
 
+#### 请求（引用 ClassBuild 实例）
+
+```json
+{
+    "wsType": "SetFieldValue",
+    "content": "{\"Class_Id\":1,\"Field_Path\":[\"bullet\"],\"Value_Class_Id\":2}"
+}
+```
+
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| `Value` | string | 新值字符串。导出时会根据目标字段类型转换为 JSON 值 |
+| `Class_Id` | int | 目标实例 ID |
+| `Field_Path` | string[] | 路径数组 |
+| `Value` | string（可选） | 新值字符串；导出时根据目标字段类型转换为 JSON 值 |
+| `Value_Class_Id` | int（可选） | 要赋值的 ClassBuild 实例 ID；优先于 `Value`，适用于字段类型为复杂对象的场景 |
 
 #### 响应
 

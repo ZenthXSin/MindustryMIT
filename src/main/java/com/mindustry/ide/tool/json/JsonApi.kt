@@ -11,24 +11,17 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.java_websocket.WebSocket
 import org.java_websocket.handshake.ClientHandshake
 import org.java_websocket.server.WebSocketServer
-import com.sun.net.httpserver.HttpExchange
-import com.sun.net.httpserver.HttpServer
 import mindustry.content.Blocks
 import mindustry.content.Bullets
 import mindustry.content.UnitTypes
 import java.io.File
-import java.awt.Desktop
 import java.net.InetSocketAddress
-import java.net.URI
-import java.nio.file.Files
-import java.nio.file.Path
 import java.lang.reflect.Modifier
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.ZipInputStream
-import kotlin.system.exitProcess
 import mindustry.content.Fx
 import mindustry.content.Items
 import mindustry.content.Liquids
@@ -364,6 +357,25 @@ class JsonApi {
                 }
             }
 
+        private fun setFieldValueByBuild(classId: Int, path: List<String>, valueBuild: ClassBuild): String =
+            when (val t = resolvePath(classId, path)) {
+                is PathTarget.FieldTarget -> {
+                    t.field.value.typeValue = valueBuild
+                    t.field.value.value = ""
+                    t.field.value.elements = null
+                    t.field.value.toJson()
+                }
+
+                is PathTarget.ElementTarget -> {
+                    t.build.classData = valueBuild.classData
+                    t.build.name = valueBuild.name
+                    t.build.value = valueBuild.value
+                    t.build.fieldBuilds.clear()
+                    t.build.fieldBuilds.addAll(valueBuild.fieldBuilds)
+                    t.build.toJson()
+                }
+            }
+
         private fun getFieldValue(classId: Int, path: List<String>): String =
             when (val t = resolvePath(classId, path, createMissing = false)) {
                 is PathTarget.FieldTarget -> t.field.value.toJson()
@@ -445,7 +457,16 @@ class JsonApi {
                     }
 
                     WebSocketDataType.AllClass -> {
-                        val classList = parser.getAllClasses()
+                        val parentClass = try {
+                            val contentJson = Json.parseToJsonElement(data.content).jsonObject
+                            contentJson["Parent_Class"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+                        } catch (_: Exception) { null }
+
+                        val classList = if (parentClass != null) {
+                            parser.getAllClassesByParent(parentClass)
+                        } else {
+                            parser.getAllClasses()
+                        }
                         val reply = WebSocketData.reply(
                             WebSocketDataType.AllClass,
                             mapOf("Class_List" to Data(list = classList.map { Data(str = it) }.toMutableList()))
@@ -523,8 +544,12 @@ class JsonApi {
                     WebSocketDataType.SetFieldValue -> {
                         val reply = try {
                             val classId = data.dataList["Class_Id"]?.int ?: fail("Class_Id 不能为空")
-                            val value = data.dataList["Value"]?.str ?: ""
-                            val jsonValue = setFieldValue(classId, parsePath(data), value)
+                            val valueClassId = data.dataList["Value_Class_Id"]?.int
+                            val jsonValue = if (valueClassId != null) {
+                                setFieldValueByBuild(classId, parsePath(data), getClassBuild(valueClassId))
+                            } else {
+                                setFieldValue(classId, parsePath(data), data.dataList["Value"]?.str ?: "")
+                            }
                             WebSocketData.reply(
                                 WebSocketDataType.SetFieldValue,
                                 mapOf(
@@ -926,7 +951,8 @@ enum class WebSocketDataType(
         listOf(
             "Class_Id" to DataType.Int,
             "Field_Path" to DataType.List,
-            "Value" to DataType.String
+            "Value" to DataType.String,
+            "Value_Class_Id" to DataType.Int
         ),
         listOf(
             "Success" to DataType.Boolean,

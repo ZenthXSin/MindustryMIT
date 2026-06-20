@@ -16,7 +16,7 @@ class TypeMap(private val parser: IJsonParser) {
             put("Short", Short::class.java)
             put("Number", Double::class.java)
             parser.classMap?.forEach { entry ->
-                put(entry.key ?: "", entry.value ?: Class.forName("java.lang.Object"))
+                put(entry.key ?: "", entry.value ?: Any::class.java)
             }
         }
     }

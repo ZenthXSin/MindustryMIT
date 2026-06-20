@@ -39,6 +39,9 @@ interface IJsonParser {
     // 所有类
     fun getAllClasses(): List<String>
 
+    // 按父类过滤所有类（含父类自身）
+    fun getAllClassesByParent(parentClass: String): List<String>
+
     // 运行时类
     fun getClassByName(className: String): Class<*>?
     
@@ -160,7 +163,7 @@ open class JsonParser : IJsonParser {
 
     // 所有类
     override fun getAllClasses(): List<String> {
-        val runtimeClasses = classMap?.mapNotNull { it.key?.toString() }?.sorted().orEmpty()
+        val runtimeClasses = classMap?.mapNotNull { it.key }?.sorted().orEmpty()
         if (runtimeClasses.isNotEmpty()) return runtimeClasses
 
         return classDocs.values
@@ -169,12 +172,38 @@ open class JsonParser : IJsonParser {
             .sorted()
     }
 
+    private fun isSubclassOf(childName: String, parentName: String): Boolean {
+        val parentKeys = classKeys(parentName)
+        if (classKeys(childName).any { it in parentKeys }) return true
+
+        val childClass = getClassByName(childName)
+        val parentClass = getClassByName(parentName)
+        if (childClass != null && parentClass != null) {
+            return parentClass.isAssignableFrom(childClass)
+        }
+
+        val meta = classMeta(childName) ?: return false
+        val parentType = meta.parentType.trim()
+        if (parentType.isBlank()) return false
+        return isSubclassOf(parentType, parentName)
+    }
+
+    override fun getAllClassesByParent(parentClass: String): List<String> {
+        val all = getAllClasses()
+        val matched = all.filter { isSubclassOf(it, parentClass) }.toMutableList()
+        val parentKeys = classKeys(parentClass)
+        if (all.none { it in parentKeys }) {
+            matched.add(0, parentClass.trim())
+        }
+        return matched.distinct().sorted()
+    }
+
     override fun getClassByName(className: String): Class<*>? {
         val keys = classKeys(className)
         return classMap?.let { map ->
             keys.firstNotNullOfOrNull { key -> map.get(key) }
                 ?: map.firstNotNullOfOrNull { entry ->
-                    val key = entry.key?.toString() ?: return@firstNotNullOfOrNull null
+                    val key = entry.key ?: return@firstNotNullOfOrNull null
                     if (key in keys || normalizeClassName(key) in keys) entry.value else null
                 }
         }

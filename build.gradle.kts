@@ -1,9 +1,19 @@
 plugins {
     id("java-library")
     id("org.jetbrains.kotlin.jvm") version "2.3.21"
-    kotlin("plugin.serialization") version "2.2.10"
+    kotlin("plugin.serialization") version "2.3.21"
     id("com.gradleup.shadow") version "8.3.6"
     `maven-publish`
+}
+
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(21))
+    }
+}
+
+kotlin {
+    jvmToolchain(21)
 }
 
 repositories{
@@ -47,6 +57,9 @@ tasks.withType<JavaExec> {
 tasks.jar {
     archiveBaseName.set("tool")
     archiveVersion.set(project.version.toString())
+    manifest {
+        attributes["Main-Class"] = "com.mindustry.ide.tool.json.JsonApiKt"
+    }
 }
 
 tasks.shadowJar {
@@ -54,6 +67,9 @@ tasks.shadowJar {
     archiveVersion.set(project.version.toString())
     archiveClassifier.set("")
     mergeServiceFiles()
+    manifest {
+        attributes["Main-Class"] = "com.mindustry.ide.tool.json.JsonApiKt"
+    }
 }
 
 tasks.build {
