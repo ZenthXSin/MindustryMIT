@@ -1,5 +1,6 @@
 package com.mindustry.ide.tool.json
 
+import arc.func.Cons
 import com.mindustry.ide.tool.json.JsonApi.ToolData.JsonApiWebSocketHandler
 import com.mindustry.ide.tool.json.JsonParser.Companion.jsonFormat
 import kotlinx.serialization.Serializable
@@ -510,8 +511,48 @@ class JsonApi {
                         val fields = parser.getAllFields(className)
                         val reply = WebSocketData.reply(
                             WebSocketDataType.AllField,
-                            mapOf("Field_List" to Data(list = fields.map { Data(str = it.name, json = it.type) }.toMutableList()))
+                            mapOf("Field_List" to Data(list = fields.map { field ->
+                                val meta = JsonTypeRegistry.get(field.type)
+                                Data(
+                                    str = field.name,
+                                    json = field.type,
+                                    obj = meta?.let { m ->
+                                        Data(
+                                            str = m.modes.joinToString(",") { it.name },
+                                            json = m.stringSource,
+                                            obj = Data(str = m.defaultType)
+                                        )
+                                    }
+                                )
+                            }.toMutableList()))
                         )
+                        jsonFormat.encodeToString(WebSocketData.serializer(), reply)
+                    }
+
+                    WebSocketDataType.TypeParserInfo -> {
+                        val typeName = data.dataList["Type_Name"]?.str ?: ""
+                        val meta = JsonTypeRegistry.get(typeName)
+                        val reply = if (meta != null) {
+                            WebSocketData.reply(
+                                WebSocketDataType.TypeParserInfo,
+                                mapOf(
+                                    "Found" to Data(boolean = true),
+                                    "Modes" to Data(list = meta.modes.map { Data(str = it.name) }.toMutableList()),
+                                    "String_Source" to Data(str = meta.stringSource),
+                                    "Default_Type" to Data(str = meta.defaultType)
+                                )
+                            )
+                        } else {
+                            WebSocketData.reply(
+                                WebSocketDataType.TypeParserInfo,
+                                mapOf(
+                                    "Found" to Data(boolean = false),
+                                    "Modes" to Data(list = mutableListOf()),
+                                    "String_Source" to Data(),
+                                    "Default_Type" to Data()
+                                )
+                            )
+                        }
                         jsonFormat.encodeToString(WebSocketData.serializer(), reply)
                     }
 
@@ -1058,6 +1099,15 @@ enum class WebSocketDataType(
             "Success" to DataType.Boolean,
             "Doc_Count" to DataType.Int,
             "Message" to DataType.String
+        )
+    ),
+    TypeParserInfo(
+        listOf("Type_Name" to DataType.String),
+        listOf(
+            "Found" to DataType.Boolean,
+            "Modes" to DataType.List,
+            "String_Source" to DataType.String,
+            "Default_Type" to DataType.String
         )
     ),
 }

@@ -64,6 +64,7 @@ jobs:
         run: |
           mkdir -p release
           cp build/libs/tool-${{ steps.ver.outputs.version }}.jar "release/tool-${{ steps.ver.outputs.version }}.jar"
+          cp src/main/web/index.html "web.html"
 
       - name: Create tag and GitHub Release
         uses: softprops/action-gh-release@v2
@@ -75,10 +76,3 @@ jobs:
             release/tool-${{ steps.ver.outputs.version }}.jar
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Publish to GitHub Packages
-        run: ./gradlew publish -Pversion=${{ steps.ver.outputs.version }} --no-daemon --stacktrace
-        env:
-          GITHUB_ACTOR: ${{ github.actor }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}

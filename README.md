@@ -29,6 +29,10 @@
 
 ## 快速开始
 
+### 推荐
+
+1. 将release发行的xxx.jar和web.html下载到本地，运行xxx.jar后，打开web.html即可
+
 ### 1. 运行环境
 
 - JDK 21 或更高版本

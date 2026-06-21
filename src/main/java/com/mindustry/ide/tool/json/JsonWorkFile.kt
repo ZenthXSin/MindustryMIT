@@ -292,7 +292,8 @@ class ClassBuild(
 
     fun toJsonElement(): JsonElement {
         if (fieldBuilds.isEmpty()) {
-            return primitiveJsonFor(classData, value)
+            val primitive = primitiveJsonFor(classData, value)
+            return if (primitive == JsonNull) JsonPrimitive(classData.simpleName) else primitive
         }
 
         return buildJsonObject {

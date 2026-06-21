@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mindustry 现代化可视化编辑器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+        body { background-color: #f1f5f9; margin: 0; height: 100vh; overflow: hidden; font-family: 'Inter', system-ui, sans-serif; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .node-enter-active, .node-leave-active { transition: all 0.3s ease; }
+        .node-enter-from, .node-leave-to { opacity: 0; transform: translateY(-10px); }
+        .collapse-enter-active, .collapse-leave-active { transition: all 0.25s ease; overflow: hidden; }
+        .collapse-enter-from, .collapse-leave-to { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; }
+        .collapse-enter-to, .collapse-leave-from { opacity: 1; max-height: 2000px; }
+        .arrow-icon { transition: transform 0.2s ease; cursor: pointer; }
+        .arrow-icon.collapsed { transform: rotate(-90deg); }
+    </style>
+    <base target="_blank">
+    <base target="_blank">
+</head>
+<body>
+
+<div id="app" class="flex flex-col h-full text-slate-800">
+    <header class="bg-slate-900 text-white px-6 py-3 flex justify-between items-center shrink-0 shadow-md z-20">
+        <div class="flex items-center gap-4">
+            <div class="w-8 h-8 bg-indigo-500 rounded flex items-center justify-center font-bold text-xl shadow">M</div>
+            <h1 class="text-lg font-semibold tracking-wide">Mindustry Visual Studio</h1>
+        </div>
+        <div class="flex items-center gap-3">
+            <div v-if="connected" class="flex items-center gap-2 mr-4">
+                <button @click="showImportDialog" class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm font-medium transition-colors border border-slate-600 flex items-center gap-1.5">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                    导入项目
+                </button>
+                <button @click="showExportDialog" class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm font-medium transition-colors border border-slate-600 flex items-center gap-1.5">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                    导出
+                </button>
+            </div>
+            <div v-if="!connected" class="flex items-center gap-2">
+                <input v-model="wsUrl" class="text-black px-3 py-1.5 rounded text-sm w-48" placeholder="ws://127.0.0.1:19190">
+                <input v-model="dataDir" class="text-black px-3 py-1.5 rounded text-sm w-64" placeholder="Data_Dir 目录">
+                <button @click="connectAndInit" class="bg-indigo-600 hover:bg-indigo-500 px-4 py-1.5 rounded text-sm font-bold transition-colors shadow">连接引擎</button>
+            </div>
+            <div v-else class="flex items-center gap-3 bg-slate-800 px-4 py-1.5 rounded border border-slate-700">
+                <span class="w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse"></span>
+                <span class="text-sm font-medium text-green-400">引擎已连接</span>
+            </div>
+        </div>
+    </header>
+
+    <div v-if="importDialogVisible" class="absolute inset-0 bg-black/50 z-50 flex items-center justify-center">
+        <div class="bg-white rounded-xl shadow-2xl p-6 w-[600px] max-h-[80vh] flex flex-col">
+            <h3 class="text-xl font-bold text-slate-800 mb-4">导入项目</h3>
+            <p class="text-sm text-slate-500 mb-3">粘贴项目 JSON 或拖拽文件到下方：</p>
+            <textarea v-model="importContent" placeholder="粘贴项目步骤 JSON..." class="flex-1 border border-slate-300 rounded-lg p-3 text-sm font-mono resize-none min-h-[200px] focus:outline-none focus:border-indigo-500"></textarea>
+            <div class="flex justify-end gap-3 mt-4">
+                <button @click="importDialogVisible = false" class="px-4 py-2 rounded text-sm text-slate-600 hover:bg-slate-100 transition-colors">取消</button>
+                <button @click="importProject" :disabled="importing" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded text-sm font-medium transition-colors disabled:opacity-50">
+                    {{ importing ? '导入中...' : '导入' }}
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div v-if="exportDialogVisible" class="absolute inset-0 bg-black/50 z-50 flex items-center justify-center">
+        <div class="bg-white rounded-xl shadow-2xl p-6 w-[600px]">
+            <h3 class="text-xl font-bold text-slate-800 mb-4">导出</h3>
+            <div class="space-y-3">
+                <div class="border border-slate-200 rounded-lg p-4 hover:border-indigo-300 cursor-pointer transition-colors" @click="exportProject">
+                    <div class="font-medium text-slate-800 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+                        导出项目（可复原）
+                    </div>
+                    <div class="text-sm text-slate-500 mt-1">导出完整的操作步骤，导入后可恢复编辑状态</div>
+                </div>
+                <div class="border border-slate-200 rounded-lg p-4 hover:border-indigo-300 cursor-pointer transition-colors" @click="exportJsonFile">
+                    <div class="font-medium text-slate-800 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                        导出 JSON
+                    </div>
+                    <div class="text-sm text-slate-500 mt-1">导出当前内容的 JSON 文件，用于 Mod 制作</div>
+                </div>
+            </div>
+            <div class="flex justify-end mt-4">
+                <button @click="exportDialogVisible = false" class="px-4 py-2 rounded text-sm text-slate-600 hover:bg-slate-100 transition-colors">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <main class="flex-1 flex overflow-hidden relative">
+        <div v-if="!connected" class="absolute inset-0 bg-slate-100/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center">
+            <div class="bg-white p-8 rounded-xl shadow-xl text-center max-w-md border border-slate-200">
+                <h2 class="text-2xl font-bold text-slate-800 mb-2">Mindustry Visual Studio</h2>
+                <p class="text-slate-500 mb-6">请确认右上角的 WebSocket 地址和数据目录，点击连接以启动可视化引擎。</p>
+                <button @click="connectAndInit" class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-lg font-medium shadow-lg transition-transform active:scale-95 w-full">启动编辑器</button>
+            </div>
+        </div>
+
+        <aside class="w-72 bg-white border-r border-slate-200 flex flex-col shadow-sm z-0">
+            <div class="p-4 border-b border-slate-100 bg-slate-50">
+                <label class="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">1. 选择内容类型</label>
+                <select v-model="selectedClass" class="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white mb-3">
+                    <option v-for="cls in classList" :key="cls" :value="cls">{{ cls }}</option>
+                </select>
+                <button @click="createInstance" class="w-full bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors shadow-sm">创建 {{ selectedClass }} 实例</button>
+            </div>
+            <div class="flex-1 flex flex-col overflow-hidden" v-if="classId !== null">
+                <div class="p-4 pb-2">
+                    <label class="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">2. 添加属性字段</label>
+                    <input v-model="searchQuery" placeholder="搜索字段 (如 health)..." class="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:border-indigo-500 outline-none bg-slate-50">
+                </div>
+                <ul class="flex-1 overflow-y-auto px-2 pb-4 space-y-0.5">
+                    <li v-for="field in filteredFields" :key="field.name">
+                        <button @click="addFieldToRoot(field)" class="w-full text-left px-3 py-2 rounded text-sm text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 transition-colors flex justify-between items-center group">
+                            <div class="flex flex-col min-w-0">
+                                <span class="truncate font-medium">{{ field.name }}</span>
+                                <span class="text-xs text-slate-400 truncate">{{ field.type }}</span>
+                            </div>
+                            <span class="text-xs text-indigo-500 opacity-0 group-hover:opacity-100 font-bold ml-2 shrink-0">+</span>
+                        </button>
+                    </li>
+                </ul>
+            </div>
+        </aside>
+
+        <section class="flex-1 bg-slate-50 flex flex-col relative overflow-y-auto">
+            <div class="p-6 max-w-4xl mx-auto w-full">
+                <div v-if="classId === null" class="text-center text-slate-400 mt-32">
+                    <div class="text-5xl mb-4 opacity-50">
+                        <svg class="w-16 h-16 mx-auto text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    </div>
+                    <p class="text-lg">请先在左侧创建实例</p>
+                </div>
+                <div v-else>
+                    <div class="flex justify-between items-end mb-6 border-b border-slate-200 pb-4">
+                        <div>
+                            <h2 class="text-2xl font-bold text-slate-800">{{ selectedClass }} 属性配置</h2>
+                            <p class="text-sm text-slate-500 mt-1">当前会话 ID: <span class="font-mono bg-slate-200 px-1.5 rounded text-slate-700">{{ classId }}</span></p>
+                        </div>
+                        <div class="flex gap-2">
+                            <button @click="collapseAll" class="text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-1.5 rounded font-medium transition-colors">全部折叠</button>
+                            <button @click="expandAll" class="text-xs bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-3 py-1.5 rounded font-medium transition-colors">全部展开</button>
+                        </div>
+                    </div>
+                    <div v-if="rootNodes.length === 0" class="text-center py-16 bg-white rounded-xl border border-dashed border-slate-300 shadow-sm">
+                        <p class="text-slate-500">尚未添加任何属性。</p>
+                        <p class="text-slate-400 text-sm mt-2">请从左侧字段列表中点击添加。</p>
+                    </div>
+                    <transition-group name="node" tag="div" class="space-y-4">
+                        <editor-node v-for="(node, index) in rootNodes" :key="node.id" :node="node" :class-id="classId" @remove="removeRootNode(index)" @refresh-preview="refreshPreview"></editor-node>
+                    </transition-group>
+                </div>
+            </div>
+        </section>
+
+        <aside class="w-1/3 bg-[#1e1e1e] flex flex-col border-l border-slate-700 shadow-2xl z-10">
+            <div class="h-12 flex items-center px-4 bg-[#252526] border-b border-slate-700 justify-between shrink-0">
+                <div class="flex items-center gap-2">
+                    <span class="text-sm font-bold text-slate-300">实时 JSON 预览</span>
+                    <span v-if="isExporting" class="w-2 h-2 bg-yellow-500 rounded-full animate-ping"></span>
+                </div>
+                <button @click="refreshPreview" class="text-xs text-slate-400 hover:text-white transition-colors border border-slate-600 px-2 py-1 rounded">手动刷新</button>
+            </div>
+            <div class="flex-1 p-4 overflow-y-auto">
+                <pre class="font-mono text-[13px] text-green-400 leading-relaxed whitespace-pre-wrap break-all">{{ exportedJson || '// 等待生成...' }}</pre>
+            </div>
+        </aside>
+    </main>
+</div>
+
+<template id="editor-node-template">
+    <div class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden transition-all duration-200 hover:border-indigo-300">
+        <div class="flex justify-between items-center px-4 py-2.5 bg-slate-50 border-b border-slate-100 group cursor-pointer" @click="toggleCollapse">
+            <div class="flex items-center gap-2 min-w-0">
+                <span v-if="canCollapse" class="arrow-icon text-slate-400 text-xs select-none" :class="{ collapsed: node.collapsed }" @click.stop="toggleCollapse">▼</span>
+                <span v-else class="w-3"></span>
+                <span v-if="node.isArray" class="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-bold shrink-0">数组 [ ]</span>
+                <span v-else-if="displayMode === 'object' || displayMode === 'subclass-editing'" class="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-bold shrink-0">对象 { }</span>
+                <span v-else class="text-xs bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-bold shrink-0">字段</span>
+                <span class="font-mono text-sm font-bold text-slate-700 truncate">{{ node.key }}</span>
+                <span v-if="node.fieldType" class="text-xs text-slate-400 shrink-0">({{ node.fieldType }})</span>
+                <span v-if="node.subclassType" class="text-xs text-indigo-500 shrink-0">→ {{ node.subclassType }}</span>
+                <span v-if="node.collapsed && node.children.length > 0" class="text-xs text-slate-400">{{ collapseSummary }}</span>
+            </div>
+            <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" @click.stop>
+                <button v-if="displayMode === 'leaf-text' || displayMode === 'leaf-select' || displayMode === 'type-select'" @click="convertToArray" class="text-xs text-blue-600 hover:bg-blue-50 px-2 py-1 rounded border border-transparent hover:border-blue-200 transition-colors">转为数组</button>
+                <button v-if="displayMode === 'leaf-text' || displayMode === 'leaf-select' || displayMode === 'type-select'" @click="convertToObject" class="text-xs text-purple-600 hover:bg-purple-50 px-2 py-1 rounded border border-transparent hover:border-purple-200 transition-colors">转为对象</button>
+                <button @click="handleRemove" :disabled="removing" class="text-xs text-red-500 hover:bg-red-50 px-2 py-1 rounded transition-colors disabled:opacity-30" title="删除此节点">
+                    <span v-if="removing">...</span><span v-else>✖</span>
+                </button>
+            </div>
+        </div>
+
+        <transition name="collapse">
+            <div v-show="!node.collapsed" class="p-3">
+                <div v-if="displayMode === 'subclass-editing'" class="pl-4 border-l-2 border-slate-100 space-y-3">
+                    <div class="text-xs text-indigo-600 bg-indigo-50 px-2 py-1 rounded mb-2">子类实例: {{ node.subclassType }} (ID: {{ node.subclassId }})</div>
+                    <transition-group name="node">
+                        <editor-node v-for="(child, index) in node.children" :key="child.id" :node="child" :class-id="classId" @remove="removeChild(index)" @refresh-preview="$emit('refresh-preview')"></editor-node>
+                    </transition-group>
+                    <div class="mt-2 flex items-center gap-2 bg-slate-50 p-2 rounded border border-slate-200">
+                        <input v-model="newPropName" @keyup.enter="addObjectProperty" placeholder="输入新属性名..." class="flex-1 border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:border-purple-500">
+                        <button @click="addObjectProperty" class="bg-purple-500 hover:bg-purple-600 text-white px-3 py-1 rounded text-sm font-medium transition-colors">添加属性</button>
+                    </div>
+                </div>
+
+                <div v-else-if="displayMode === 'type-select'" class="space-y-2">
+                    <div class="flex items-center gap-2">
+                        <select v-model="refMode" class="border border-slate-300 rounded px-2 py-1 text-sm bg-white">
+                            <option value="instance">使用现有实例</option>
+                            <option value="newclass">创建新实例</option>
+                        </select>
+                    </div>
+                    <div v-if="refMode === 'instance'">
+                        <select v-model="node.value" @change="saveValue" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:border-indigo-500 transition-colors">
+                            <option value="">-- 选择 {{ node.fieldType }} 实例 --</option>
+                            <option v-for="opt in instanceOptions" :key="opt" :value="opt">{{ opt }}</option>
+                        </select>
+                        <span v-if="saved" class="text-xs text-green-500 ml-2">已保存 ✔</span>
+                    </div>
+                    <div v-else class="flex gap-2">
+                        <select v-model="selectedType" class="flex-1 border border-slate-300 rounded px-2 py-1 text-sm bg-white">
+                            <option value="">-- 选择类型 --</option>
+                            <option v-for="t in allTypes" :key="t" :value="t">{{ t }}</option>
+                        </select>
+                        <button @click="createTypeInstance" :disabled="creatingType" class="bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1 rounded text-sm font-medium transition-colors disabled:opacity-50">{{ creatingType ? '...' : '创建' }}</button>
+                    </div>
+                </div>
+
+                <div v-else-if="displayMode === 'leaf-select'" class="relative">
+                    <select v-model="node.value" @change="saveValue" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:border-indigo-500 transition-colors">
+                        <option value="">-- 选择 {{ node.fieldType }} 实例 --</option>
+                        <option v-for="opt in instanceOptions" :key="opt" :value="opt">{{ opt }}</option>
+                    </select>
+                    <span v-if="saved" class="absolute right-8 top-2 text-xs text-green-500">已保存 ✔</span>
+                </div>
+
+                <div v-else-if="displayMode === 'leaf-text'" class="relative">
+                    <input type="text" v-model="node.value" @blur="saveValue" @keyup.enter="saveValue" placeholder="输入值..." class="w-full border-b border-slate-300 px-2 py-1.5 text-sm focus:outline-none focus:border-indigo-500 transition-colors bg-transparent">
+                    <span v-if="saving" class="absolute right-2 top-2 text-xs text-indigo-500">保存中...</span>
+                    <span v-else-if="saved" class="absolute right-2 top-2 text-xs text-green-500">已保存 ✔</span>
+                </div>
+
+                <div v-else-if="displayMode === 'array'" class="pl-4 border-l-2 border-slate-100 space-y-3">
+                    <transition-group name="node">
+                        <editor-node v-for="(child, index) in node.children" :key="child.id" :node="child" :class-id="classId" @remove="removeChild(index)" @refresh-preview="$emit('refresh-preview')"></editor-node>
+                    </transition-group>
+                    <div class="mt-2">
+                        <button @click="addArrayElement" class="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1 font-medium bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded transition-colors">
+                            <span>+ 添加数组元素</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div v-else-if="displayMode === 'object'" class="pl-4 border-l-2 border-slate-100 space-y-3">
+                    <div v-if="!node.expanded" class="mb-2">
+                        <button @click="expandObject" :disabled="expanding" class="text-xs text-purple-600 bg-purple-50 hover:bg-purple-100 px-3 py-1.5 rounded font-medium transition-colors disabled:opacity-50">
+                            <span v-if="expanding">加载中...</span><span v-else>展开 {{ node.fieldType }} 类型字段</span>
+                        </button>
+                    </div>
+                    <transition-group name="node">
+                        <editor-node v-for="(child, index) in node.children" :key="child.id" :node="child" :class-id="classId" @remove="removeChild(index)" @refresh-preview="$emit('refresh-preview')"></editor-node>
+                    </transition-group>
+                    <div v-if="node.expanded" class="mt-2 flex items-center gap-2 bg-slate-50 p-2 rounded border border-slate-200">
+                        <input v-model="newPropName" @keyup.enter="addObjectProperty" placeholder="输入新属性名..." class="flex-1 border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:border-purple-500">
+                        <button @click="addObjectProperty" class="bg-purple-500 hover:bg-purple-600 text-white px-3 py-1 rounded text-sm font-medium transition-colors">添加属性</button>
+                    </div>
+                </div>
+
+                <div v-else-if="displayMode === 'loading'" class="text-sm text-slate-400 py-2">正在分析类型...</div>
+            </div>
+        </transition>
+    </div>
+</template>
+
+<script>
+    class MindustryWSClient {
+        constructor() { this.ws = null; this.resolvers = {}; }
+        connect(url) {
+            return new Promise((resolve, reject) => {
+                try { this.ws = new WebSocket(url); } catch (e) { return reject(e); }
+                this.ws.onopen = () => resolve();
+                this.ws.onmessage = (e) => this.handleMessage(e.data);
+                this.ws.onerror = (e) => { if (this.ws.readyState !== WebSocket.OPEN) reject(e); };
+            });
+        }
+        handleMessage(rawData) {
+            try {
+                const response = JSON.parse(rawData);
+                const { wsType, dataList } = response;
+                const parsedData = this.parseDataList(dataList);
+                if (wsType === 'Error') { console.error("后端错误:", parsedData.Message); alert("后端错误: " + parsedData.Message); return; }
+                if (this.resolvers[wsType] && this.resolvers[wsType].length > 0) {
+                    this.resolvers[wsType].shift().resolve(parsedData);
+                }
+            } catch (error) { console.error("解析失败", error); }
+        }
+        send(wsType, contentObj = null) {
+            return new Promise((resolve, reject) => {
+                if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return reject('WS未连接');
+                const payload = { wsType };
+                if (contentObj) payload.content = JSON.stringify(contentObj);
+                if (!this.resolvers[wsType]) this.resolvers[wsType] = [];
+                this.resolvers[wsType].push({ resolve, reject });
+                this.ws.send(JSON.stringify(payload));
+            });
+        }
+        parseDataList(dataObj) {
+            if (dataObj === null || dataObj === undefined) return null;
+            if (typeof dataObj !== 'object') return dataObj;
+            if (Array.isArray(dataObj)) return dataObj.map(item => this.parseDataList(item));
+            const keys = Object.keys(dataObj);
+            if (keys.length === 1) {
+                const k = keys[0];
+                if (['str', 'int', 'float', 'boolean', 'json', 'long', 'double', 'short', 'byte'].includes(k)) return dataObj[k];
+                if (k === 'list') return dataObj.list.map(item => this.parseDataList(item));
+                if (k === 'obj') return this.parseDataList(dataObj.obj);
+            }
+            const result = {};
+            for (const key in dataObj) result[key] = this.parseDataList(dataObj[key]);
+            return result;
+        }
+    }
+    const wsApi = new MindustryWSClient();
+
+    const classInstanceCache = {};
+    const allClassCache = {};
+
+    async function fetchClassInstances(typeName) {
+        if (!typeName || typeName === '' || typeName === 'String' || typeName === 'str') return [];
+        if (classInstanceCache[typeName] !== undefined) return classInstanceCache[typeName];
+        try {
+            const res = await wsApi.send('ClassInstance', { Class_Name: typeName });
+            const list = res.Object_List ? res.Object_List.map(item => typeof item === 'string' ? item : (item.str || String(item))) : [];
+            classInstanceCache[typeName] = list;
+            return list;
+        } catch (e) { classInstanceCache[typeName] = []; return []; }
+    }
+
+    async function fetchAllTypes(typeName) {
+        if (!typeName || typeName === '' || typeName === 'String' || typeName === 'str') return [];
+        if (allClassCache[typeName] !== undefined) return allClassCache[typeName];
+        try {
+            const res = await wsApi.send('AllClass', { Parent_Class: typeName });
+            const list = res.Class_List ? res.Class_List.map(item => typeof item === 'string' ? item : (item.str || String(item))) : [];
+            allClassCache[typeName] = list;
+            return list;
+        } catch (e) { allClassCache[typeName] = []; return []; }
+    }
+
+    function isBasicType(typeName) {
+        if (!typeName) return true;
+        const basics = ['int', 'float', 'double', 'long', 'short', 'byte', 'boolean', 'String', 'str', 'char'];
+        return basics.includes(typeName) || basics.some(b => typeName.endsWith('.' + b));
+    }
+
+    function parseTypeInfo(typeName) {
+        if (!typeName) return { isArray: false, elementType: null, baseType: 'String' };
+        if (typeName.startsWith('[L') && typeName.endsWith(';')) {
+            const et = typeName.slice(2, -1);
+            return { isArray: true, elementType: et, baseType: et };
+        }
+        if (typeName.endsWith('[]')) {
+            const et = typeName.slice(0, -2);
+            return { isArray: true, elementType: et, baseType: et };
+        }
+        if (/^\[[IFZBSJDC]$/.test(typeName)) {
+            const map = { 'I': 'int', 'F': 'float', 'Z': 'boolean', 'B': 'byte', 'S': 'short', 'J': 'long', 'D': 'double', 'C': 'char' };
+            const et = map[typeName[1]] || 'Object';
+            return { isArray: true, elementType: et, baseType: et };
+        }
+        return { isArray: false, elementType: null, baseType: typeName };
+    }
+
+    // 递归构建节点树
+    function buildNodeFromData(key, value, path, fieldType) {
+        const node = {
+            id: Date.now() + Math.random(),
+            key: key,
+            path: path,
+            fieldType: fieldType || 'String',
+            elementType: null,
+            isArray: false,
+            value: '',
+            children: [],
+            expanded: false,
+            collapsed: false,
+            subclassType: null,
+            subclassId: null
+        };
+
+        if (value === null || value === undefined) {
+            return node;
+        }
+
+        if (Array.isArray(value)) {
+            node.isArray = true;
+            node.elementType = fieldType ? fieldType.replace(/\[\]$/, '') : 'String';
+            for (let i = 0; i < value.length; i++) {
+                const item = value[i];
+                const childPath = [...path, `#${i}`];
+
+                if (typeof item === 'object' && item !== null) {
+                    const childNode = {
+                        id: Date.now() + Math.random(),
+                        key: `元素 [${i}]`,
+                        path: childPath,
+                        fieldType: item.type || node.elementType || 'String',
+                        elementType: null,
+                        isArray: false,
+                        value: '',
+                        children: [],
+                        expanded: false,
+                        collapsed: false,
+                        subclassType: item.type || null,
+                        subclassId: null
+                    };
+
+                    for (const [k, v] of Object.entries(item)) {
+                        if (k === 'type') continue;
+                        const grandChild = buildNodeFromData(k, v, [...childPath, k], typeof v === 'number' ? 'float' : 'String');
+                        childNode.children.push(grandChild);
+                    }
+                    node.children.push(childNode);
+                } else {
+                    node.children.push({
+                        id: Date.now() + Math.random(),
+                        key: `元素 [${i}]`,
+                        path: childPath,
+                        fieldType: 'String',
+                        elementType: null,
+                        isArray: false,
+                        value: String(item),
+                        children: [],
+                        expanded: false,
+                        collapsed: false,
+                        subclassType: null,
+                        subclassId: null
+                    });
+                }
+            }
+        } else if (typeof value === 'object') {
+            node.isArray = false;
+            node.subclassType = value.type || fieldType;
+
+            for (const [k, v] of Object.entries(value)) {
+                if (k === 'type') continue;
+                const childNode = buildNodeFromData(k, v, [...path, k], typeof v === 'number' ? 'float' : 'String');
+                node.children.push(childNode);
+            }
+        } else {
+            node.value = String(value);
+        }
+
+        return node;
+    }
+
+    class StepRecorder {
+        constructor() { this.steps = []; }
+        record(step) { this.steps.push({ ...step, timestamp: Date.now() }); }
+        getSteps() { return this.steps; }
+        clear() { this.steps = []; }
+        exportJson() { return JSON.stringify({ version: "1.0", steps: this.steps }, null, 2); }
+
+        async replay(steps, wsApi) {
+            const idMap = {};
+            for (const step of steps) {
+                switch (step.type) {
+                    case 'NewClass': {
+                        const res = await wsApi.send('NewClass', { Class_Name: step.className });
+                        let newId = res.Class_Id;
+                        if (typeof newId === 'object' && newId !== null) newId = Object.values(newId)[0];
+                        idMap[step.classId] = newId;
+                        break;
+                    }
+                    case 'SetFieldValue': {
+                        const classId = idMap[step.classId] || step.classId;
+                        const path = step.path.map(p => idMap[p] || p);
+                        if (step.valueClassId) {
+                            await wsApi.send('SetFieldValue', {
+                                Class_Id: classId, Field_Path: path,
+                                Value_Class_Id: idMap[step.valueClassId] || step.valueClassId
+                            });
+                        } else {
+                            await wsApi.send('SetFieldValue', {
+                                Class_Id: classId, Field_Path: path, Value: step.value
+                            });
+                        }
+                        break;
+                    }
+                    case 'AddElement': {
+                        const classId = idMap[step.classId] || step.classId;
+                        const path = step.path.map(p => idMap[p] || p);
+                        await wsApi.send('AddElement', {
+                            Class_Id: classId, Field_Path: path,
+                            Element_Type: step.elementType || '', Value: step.value || ''
+                        });
+                        break;
+                    }
+                    case 'RemoveElement': {
+                        const classId = idMap[step.classId] || step.classId;
+                        const path = step.path.map(p => idMap[p] || p);
+                        const payload = { Class_Id: classId, Field_Path: path };
+                        if (step.index !== undefined) payload.Index = step.index;
+                        await wsApi.send('RemoveElement', payload);
+                        break;
+                    }
+                }
+            }
+            return idMap;
+        }
+    }
+    const stepRecorder = new StepRecorder();
+
+    const EditorNode = {
+        name: 'EditorNode',
+        template: '#editor-node-template',
+        props: { node: Object, classId: Number },
+        emits: ['remove', 'refresh-preview'],
+        setup(props, { emit }) {
+            const { ref, onMounted, computed } = Vue;
+            const saving = ref(false);
+            const saved = ref(false);
+            const newPropName = ref('');
+            const instanceOptions = ref([]);
+            const allTypes = ref([]);
+            const refMode = ref('instance');
+            const selectedType = ref('');
+            const expanding = ref(false);
+            const removing = ref(false);
+            const creatingType = ref(false);
+            const displayMode = ref('loading');
+
+            if (props.node.collapsed === undefined) props.node.collapsed = false;
+
+            const canCollapse = computed(() => {
+                return props.node.isArray || displayMode.value === 'object' || displayMode.value === 'subclass-editing' || (displayMode.value === 'array' && props.node.children.length > 0);
+            });
+
+            const collapseSummary = computed(() => {
+                const count = props.node.children.length;
+                if (props.node.isArray) return count > 0 ? `(${count} 个元素)` : '(空)';
+                if (displayMode.value === 'subclass-editing') return count > 0 ? `(${count} 个字段)` : '';
+                return count > 0 ? `(${count} 个属性)` : '(空)';
+            });
+
+            onMounted(async () => {
+                if (props.node.isArray) { displayMode.value = 'array'; return; }
+                if (isBasicType(props.node.fieldType)) { displayMode.value = 'leaf-text'; return; }
+                if (props.node.subclassId) { displayMode.value = 'subclass-editing'; await loadSubclassFields(); return; }
+
+                const [instances, types] = await Promise.all([
+                    fetchClassInstances(props.node.fieldType),
+                    fetchAllTypes(props.node.fieldType)
+                ]);
+                instanceOptions.value = instances;
+                allTypes.value = types;
+
+                if (instances.length > 0) displayMode.value = 'type-select';
+                else if (types.length > 0) { displayMode.value = 'type-select'; refMode.value = 'newclass'; }
+                else displayMode.value = 'object';
+            });
+
+            const toggleCollapse = () => { if (canCollapse.value) props.node.collapsed = !props.node.collapsed; };
+
+            const loadSubclassFields = async () => {
+                if (!props.node.subclassType) return;
+                try {
+                    const res = await wsApi.send('AllField', { Class_Name: props.node.subclassType });
+                    if (res.Field_List) {
+                        props.node.children = [];
+                        for (const f of res.Field_List) {
+                            const fieldName = typeof f === 'string' ? f : (f.str || String(f));
+                            const fieldType = typeof f === 'string' ? 'String' : (f.json || 'String');
+                            const tInfo = parseTypeInfo(fieldType);
+                            props.node.children.push({
+                                id: Date.now() + Math.random(), key: fieldName,
+                                path: [...props.node.path, fieldName],
+                                fieldType: tInfo.baseType, elementType: tInfo.elementType,
+                                isArray: tInfo.isArray, value: '', children: [],
+                                expanded: false, collapsed: false
+                            });
+                        }
+                        props.node.expanded = true;
+                    }
+                } catch (e) { console.error('加载子类字段失败:', e); }
+            };
+
+            const saveValue = async () => {
+                saving.value = true; saved.value = false;
+                try {
+                    await wsApi.send('SetFieldValue', {
+                        Class_Id: props.classId,
+                        Field_Path: props.node.path,
+                        Value: String(props.node.value)
+                    });
+                    stepRecorder.record({
+                        type: 'SetFieldValue',
+                        classId: props.classId,
+                        path: props.node.path,
+                        value: String(props.node.value)
+                    });
+                    saved.value = true;
+                    setTimeout(() => saved.value = false, 2000);
+                    emit('refresh-preview');
+                } catch (e) { alert('保存失败: ' + e); }
+                finally { saving.value = false; }
+            };
+
+            const createTypeInstance = async () => {
+                if (!selectedType.value) return;
+                creatingType.value = true;
+                try {
+                    const res = await wsApi.send('NewClass', { Class_Name: selectedType.value });
+                    let subId = res.Class_Id;
+                    if (typeof subId === 'object' && subId !== null) subId = Object.values(subId)[0];
+
+                    await wsApi.send('SetFieldValue', {
+                        Class_Id: props.classId,
+                        Field_Path: props.node.path,
+                        Value_Class_Id: subId
+                    });
+
+                    stepRecorder.record({ type: 'NewClass', className: selectedType.value, classId: subId });
+                    stepRecorder.record({
+                        type: 'SetFieldValue',
+                        classId: props.classId,
+                        path: props.node.path,
+                        valueClassId: subId
+                    });
+
+                    props.node.subclassType = selectedType.value;
+                    props.node.subclassId = subId;
+                    props.node.value = '';
+                    displayMode.value = 'subclass-editing';
+                    await loadSubclassFields();
+                    saved.value = true;
+                    setTimeout(() => saved.value = false, 2000);
+                    emit('refresh-preview');
+                } catch (e) { alert('创建实例失败: ' + e); }
+                finally { creatingType.value = false; }
+            };
+
+            const expandObject = async () => {
+                if (expanding.value) return;
+                expanding.value = true;
+                try {
+                    const res = await wsApi.send('AllField', { Class_Name: props.node.fieldType });
+                    if (res.Field_List) {
+                        for (const f of res.Field_List) {
+                            const fieldName = typeof f === 'string' ? f : (f.str || String(f));
+                            const fieldType = typeof f === 'string' ? 'String' : (f.json || 'String');
+                            const tInfo = parseTypeInfo(fieldType);
+                            props.node.children.push({
+                                id: Date.now() + Math.random(), key: fieldName,
+                                path: [...props.node.path, fieldName],
+                                fieldType: tInfo.baseType, elementType: tInfo.elementType,
+                                isArray: tInfo.isArray, value: '', children: [],
+                                expanded: false, collapsed: false
+                            });
+                        }
+                        props.node.expanded = true;
+                        emit('refresh-preview');
+                    }
+                } catch (e) { alert('展开字段失败: ' + e); }
+                finally { expanding.value = false; }
+            };
+
+            const convertToArray = () => {
+                props.node.isArray = true;
+                props.node.elementType = props.node.fieldType;
+                props.node.children = []; props.node.collapsed = false;
+                displayMode.value = 'array';
+            };
+
+            const convertToObject = () => {
+                props.node.isArray = false; props.node.elementType = null;
+                props.node.children = []; props.node.expanded = false; props.node.collapsed = false;
+                displayMode.value = 'object';
+            };
+
+            const addArrayElement = async () => {
+                try {
+                    const res = await wsApi.send('AddElement', {
+                        Class_Id: props.classId,
+                        Field_Path: props.node.path,
+                        Element_Type: props.node.elementType || '',
+                        Value: ''
+                    });
+                    let idx = res.Index;
+                    if (typeof idx === 'object' || idx == null) {
+                        const vals = Object.values(idx || {});
+                        idx = vals.length > 0 ? vals[0] : 0;
+                    }
+
+                    stepRecorder.record({
+                        type: 'AddElement',
+                        classId: props.classId,
+                        path: props.node.path,
+                        elementType: props.node.elementType || '',
+                        value: ''
+                    });
+
+                    props.node.children.push({
+                        id: Date.now() + Math.random(),
+                        key: `元素 [${idx}]`,
+                        path: [...props.node.path, `#${idx}`],
+                        fieldType: props.node.elementType || 'String',
+                        elementType: null, isArray: false, value: '',
+                        children: [], expanded: false, collapsed: false
+                    });
+                    props.node.collapsed = false;
+                    emit('refresh-preview');
+                } catch (e) { alert('添加数组元素失败: ' + e); }
+            };
+
+            const addObjectProperty = () => {
+                const propName = newPropName.value.trim();
+                if (!propName) return;
+                if (props.node.children.find(c => c.key === propName)) { alert("该属性已存在！"); return; }
+                props.node.children.push({
+                    id: Date.now() + Math.random(), key: propName,
+                    path: [...props.node.path, propName],
+                    fieldType: 'String', elementType: null, isArray: false,
+                    value: '', children: [], expanded: false, collapsed: false
+                });
+                newPropName.value = '';
+                emit('refresh-preview');
+            };
+
+            const removeChild = async (index) => {
+                const child = props.node.children[index];
+                const path = child.path;
+                const lastSegment = path[path.length - 1];
+
+                removing.value = true;
+                try {
+                    if (lastSegment.startsWith('#')) {
+                        const arrayPath = path.slice(0, -1);
+                        const idx = parseInt(lastSegment.slice(1));
+                        await wsApi.send('RemoveElement', {
+                            Class_Id: props.classId,
+                            Field_Path: arrayPath,
+                            Index: idx
+                        });
+                        stepRecorder.record({
+                            type: 'RemoveElement',
+                            classId: props.classId,
+                            path: arrayPath,
+                            index: idx
+                        });
+                    } else {
+                        await wsApi.send('RemoveElement', {
+                            Class_Id: props.classId,
+                            Field_Path: path
+                        });
+                        stepRecorder.record({
+                            type: 'RemoveElement',
+                            classId: props.classId,
+                            path: path
+                        });
+                    }
+                    props.node.children.splice(index, 1);
+                    emit('refresh-preview');
+                } catch (e) { alert('删除失败: ' + e); }
+                finally { removing.value = false; }
+            };
+
+            const handleRemove = () => { emit('remove'); };
+
+            return {
+                saving, saved, newPropName, instanceOptions, allTypes, refMode, selectedType,
+                expanding, removing, creatingType, displayMode, canCollapse, collapseSummary,
+                toggleCollapse, saveValue, createTypeInstance, expandObject, convertToArray, convertToObject,
+                addArrayElement, addObjectProperty, removeChild, handleRemove
+            };
+        }
+    };
+
+    const { createApp, ref, computed } = Vue;
+    const app = createApp({
+        setup() {
+            const wsUrl = ref('ws://127.0.0.1:19190');
+            const dataDir = ref('C:\\Users\\Administrator\\Desktop\\Mindustry\\MindustryMIT\\.mindustrymit-data');
+            const connected = ref(false);
+            const classList = ref([]);
+            const selectedClass = ref('Block');
+            const classId = ref(null);
+            const allFields = ref([]);
+            const searchQuery = ref('');
+            const rootNodes = ref([]);
+            const exportedJson = ref('');
+            const isExporting = ref(false);
+
+            const importDialogVisible = ref(false);
+            const exportDialogVisible = ref(false);
+            const importContent = ref('');
+            const importing = ref(false);
+
+            const filteredFields = computed(() => {
+                if (!searchQuery.value) return allFields.value;
+                const q = searchQuery.value.toLowerCase();
+                return allFields.value.filter(f => f.name.toLowerCase().includes(q) || (f.type && f.type.toLowerCase().includes(q)));
+            });
+
+            const connectAndInit = async () => {
+                try {
+                    await wsApi.connect(wsUrl.value);
+                    connected.value = true;
+                    await wsApi.send('Init', { Data_Dir: dataDir.value });
+                    const res = await wsApi.send('AllClass');
+                    classList.value = res.Class_List ? res.Class_List.sort() : [];
+                } catch (e) { alert("连接或初始化失败，请检查后端是否运行！\n" + e); }
+            };
+
+            const createInstance = async () => {
+                if (classId.value !== null) {
+                    await wsApi.send('RemoveClass', { Class_Id: classId.value });
+                }
+                const res = await wsApi.send('NewClass', { Class_Name: selectedClass.value });
+                let cid = res.Class_Id;
+                if (typeof cid === 'object' && cid !== null) cid = Object.values(cid)[0];
+                classId.value = cid;
+
+                stepRecorder.clear();
+                stepRecorder.record({ type: 'NewClass', className: selectedClass.value, classId: cid });
+
+                const fRes = await wsApi.send('AllField', { Class_Name: selectedClass.value });
+                if (fRes.Field_List) {
+                    allFields.value = fRes.Field_List.map(f => {
+                        if (typeof f === 'string') return { name: f, type: 'String' };
+                        return { name: f.str || String(f), type: f.json || 'String' };
+                    }).sort((a, b) => a.name.localeCompare(b.name));
+                } else allFields.value = [];
+
+                rootNodes.value = [];
+                exportedJson.value = '';
+                searchQuery.value = '';
+                await refreshPreview();
+            };
+
+            const addFieldToRoot = (field) => {
+                if (rootNodes.value.find(n => n.key === field.name)) return;
+                const tInfo = parseTypeInfo(field.type);
+                rootNodes.value.push({
+                    id: Date.now() + Math.random(), key: field.name,
+                    path: [field.name], fieldType: tInfo.baseType,
+                    elementType: tInfo.elementType, isArray: tInfo.isArray,
+                    value: '', children: [], expanded: false, collapsed: false,
+                    subclassType: null, subclassId: null
+                });
+            };
+
+            const removeRootNode = async (index) => {
+                const node = rootNodes.value[index];
+                try {
+                    if (node.subclassId) await wsApi.send('RemoveClass', { Class_Id: node.subclassId });
+                    await wsApi.send('RemoveElement', { Class_Id: classId.value, Field_Path: node.path });
+                    stepRecorder.record({ type: 'RemoveElement', classId: classId.value, path: node.path });
+                    rootNodes.value.splice(index, 1);
+                    await refreshPreview();
+                } catch (e) { alert('删除失败: ' + e); }
+            };
+
+            const refreshPreview = async () => {
+                if (classId.value === null) return;
+                isExporting.value = true;
+                try {
+                    const res = await wsApi.send('ExportClass', { Class_Id: classId.value });
+                    try { exportedJson.value = JSON.stringify(JSON.parse(res.Content), null, 2); }
+                    catch(e) { exportedJson.value = res.Content; }
+                } finally { isExporting.value = false; }
+            };
+
+            const showImportDialog = () => { importDialogVisible.value = true; importContent.value = ''; };
+            const showExportDialog = () => { exportDialogVisible.value = true; };
+
+            const exportProject = () => {
+                const json = stepRecorder.exportJson();
+                const blob = new Blob([json], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `mindustry-project-${Date.now()}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+                exportDialogVisible.value = false;
+            };
+
+            const exportJsonFile = () => {
+                if (!exportedJson.value) { alert('没有可导出的 JSON'); return; }
+                const blob = new Blob([exportedJson.value], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${selectedClass.value.toLowerCase()}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+                exportDialogVisible.value = false;
+            };
+
+            const importProject = async () => {
+                if (!importContent.value.trim()) { alert('请输入项目 JSON'); return; }
+                importing.value = true;
+                try {
+                    const project = JSON.parse(importContent.value);
+                    if (!project.steps || !Array.isArray(project.steps)) {
+                        alert('无效的项目格式：缺少 steps 数组'); return;
+                    }
+
+                    if (classId.value !== null) {
+                        await wsApi.send('RemoveClass', { Class_Id: classId.value });
+                    }
+                    stepRecorder.clear();
+
+                    const idMap = await stepRecorder.replay(project.steps, wsApi);
+
+                    const newClassId = Object.values(idMap)[0];
+                    if (newClassId) {
+                        classId.value = newClassId;
+
+                        const firstStep = project.steps.find(s => s.type === 'NewClass');
+                        if (firstStep) selectedClass.value = firstStep.className;
+
+                        const fRes = await wsApi.send('AllField', { Class_Name: selectedClass.value });
+                        if (fRes.Field_List) {
+                            allFields.value = fRes.Field_List.map(f => {
+                                if (typeof f === 'string') return { name: f, type: 'String' };
+                                return { name: f.str || String(f), type: f.json || 'String' };
+                            }).sort((a, b) => a.name.localeCompare(b.name));
+                        }
+
+                        // 从后端导出数据重建节点树
+                        const res = await wsApi.send('ExportClass', { Class_Id: newClassId });
+                        const data = JSON.parse(res.Content);
+
+                        rootNodes.value = [];
+                        for (const [key, value] of Object.entries(data)) {
+                            if (key === 'type') continue;
+                            const field = allFields.value.find(f => f.name === key);
+                            const fieldType = field ? field.type : 'String';
+                            const tInfo = parseTypeInfo(fieldType);
+                            const node = buildNodeFromData(key, value, [key], tInfo.baseType);
+                            node.fieldType = tInfo.baseType;
+                            node.elementType = tInfo.elementType;
+                            node.isArray = tInfo.isArray;
+                            rootNodes.value.push(node);
+                        }
+
+                        await refreshPreview();
+                    }
+
+                    importDialogVisible.value = false;
+                    alert('项目导入成功！');
+                } catch (e) { alert('导入失败: ' + e); }
+                finally { importing.value = false; }
+            };
+
+            const collapseAll = () => {
+                const setCollapsed = (nodes, val) => {
+                    for (const node of nodes) {
+                        if (node.children && node.children.length > 0) {
+                            node.collapsed = val;
+                            setCollapsed(node.children, val);
+                        }
+                    }
+                };
+                setCollapsed(rootNodes.value, true);
+            };
+
+            const expandAll = () => {
+                const setCollapsed = (nodes, val) => {
+                    for (const node of nodes) {
+                        if (node.children && node.children.length > 0) {
+                            node.collapsed = val;
+                            setCollapsed(node.children, val);
+                        }
+                    }
+                };
+                setCollapsed(rootNodes.value, false);
+            };
+
+            return {
+                wsUrl, dataDir, connected, connectAndInit,
+                classList, selectedClass, classId, createInstance,
+                allFields, searchQuery, filteredFields,
+                rootNodes, addFieldToRoot, removeRootNode,
+                exportedJson, isExporting, refreshPreview,
+                importDialogVisible, exportDialogVisible, importContent, importing,
+                showImportDialog, showExportDialog, exportProject, exportJsonFile, importProject,
+                collapseAll, expandAll
+            };
+        }
+    });
+    app.component('editor-node', EditorNode);
+    app.mount('#app');
+</script>
+</body>
+</html>
