@@ -27,8 +27,6 @@ dependencies {
     val mindustryVersion = "v157.4"
     compileOnly("com.github.Anuken.Mindustry:core:$mindustryVersion")
     compileOnly("com.github.Anuken.Arc:arc-core:$mindustryVersion")
-    runtimeOnly("com.github.Anuken.Mindustry:core:$mindustryVersion")
-    runtimeOnly("com.github.Anuken.Arc:arc-core:$mindustryVersion")
 
     // Kotlin Serialization
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
@@ -43,8 +41,6 @@ dependencies {
     implementation("org.java-websocket:Java-WebSocket:1.5.4")
 
     testImplementation(kotlin("test"))
-    testImplementation("com.github.Anuken.Mindustry:core:$mindustryVersion")
-    testImplementation("com.github.Anuken.Arc:arc-core:$mindustryVersion")
 }
 
 group = "com.mindustry.ide"
@@ -58,7 +54,7 @@ tasks.jar {
     archiveBaseName.set("tool")
     archiveVersion.set(project.version.toString())
     manifest {
-        attributes["Main-Class"] = "com.mindustry.ide.tool.json.JsonApiKt"
+        attributes["Main-Class"] = "com.mindustry.ide.tool.MainKt"
     }
 }
 
@@ -68,7 +64,7 @@ tasks.shadowJar {
     archiveClassifier.set("")
     mergeServiceFiles()
     manifest {
-        attributes["Main-Class"] = "com.mindustry.ide.tool.json.JsonApiKt"
+        attributes["Main-Class"] = "com.mindustry.ide.tool.MainKt"
     }
 }
 
