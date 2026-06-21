@@ -1,6 +1,5 @@
 package com.mindustry.ide.tool.json
 
-import arc.func.Cons
 import com.mindustry.ide.tool.json.JsonApi.ToolData.JsonApiWebSocketHandler
 import com.mindustry.ide.tool.json.JsonParser.Companion.jsonFormat
 import kotlinx.serialization.Serializable
