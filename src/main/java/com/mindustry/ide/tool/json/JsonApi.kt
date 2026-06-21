@@ -801,7 +801,7 @@ class JsonApi {
 
         class JsonApiWebSocketHandler(
             val toolData: ToolData = ToolData(),
-            val port: Int = 19190,
+            var port: Int = 19190,
             private val bindHost: String = "127.0.0.1",
             private val token: String? = System.getProperty("mindustrymit.wsToken")?.takeIf { it.isNotBlank() },
             private val allowedOrigins: Set<String> = emptySet()

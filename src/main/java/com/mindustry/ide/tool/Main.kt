@@ -10,7 +10,17 @@ fun main(args: Array<String>) {
     println("MindustryMIT - Mindustry 图形化模组编辑器后端")
     println("正在启动 WebSocket 服务器...")
 
+    println("请输入WebSocket 服务器端口")
+    print("> ")
+
+    val line = readlnOrNull()?.trim()?.toIntOrNull() ?: 19190
+
+    if (line == 19190) {
+        println("使用默认端口 19190")
+    }
+
     val api = JsonApi()
+    api.server.port = line
     api.server.start()
 
     println("服务器已启动，按 Ctrl+C 停止")
