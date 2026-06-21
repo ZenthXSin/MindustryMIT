@@ -31,7 +31,7 @@
 
 ### 1. 运行环境
 
-- JDK 11 或更高版本
+- JDK 21 或更高版本
 - Kotlin/Gradle 运行时由项目构建脚本管理
 - 主要依赖：`kotlinx-serialization-json`, `Java-WebSocket`, `Mindustry core`
 
@@ -201,6 +201,7 @@ interface Data {
 | `GetFieldValue` | 客户端→服务器 | 读取指定路径的字段值 |
 | `SetFieldValue` | 客户端→服务器 | 设置指定路径的字段值 |
 | `AddElement` | 客户端→服务器 | 向数组/列表字段添加元素 |
+| `RemoveElement` | 客户端→服务器 | 从数组/列表字段删除指定下标的元素 |
 | `ExportClass` | 客户端→服务器 | 导出整个类实例的 JSON 表示 |
 | `NewClass` | 客户端→服务器 | 创建新的可编辑类型实例（返回 Class_Id） |
 | `RemoveClass` | 客户端→服务器 | 删除已创建的类实例 |
@@ -333,14 +334,16 @@ interface Data {
     "dataList": {
         "Field_List": {
             "list": [
-                { "str": "health" },
-                { "str": "requirements" },
+                { "str": "health", "json": "float" },
+                { "str": "requirements", "json": "mindustry.type.ItemStack[]" },
                 ...
             ]
         }
     }
 }
 ```
+
+每个元素的 `str` 是字段名，`json` 是字段的类型名（运行时反射字段使用 `canonicalName`，文档字段使用文档中记录的类型字符串）。
 
 ---
 
@@ -433,8 +436,8 @@ interface Data {
 |------|------|------|
 | `Class_Id` | int | 目标实例 ID |
 | `Field_Path` | string[] | 路径数组 |
-| `Value` | string（可选） | 新值字符串；导出时根据目标字段类型转换为 JSON 值 |
-| `Value_Class_Id` | int（可选） | 要赋值的 ClassBuild 实例 ID；优先于 `Value`，适用于字段类型为复杂对象的场景 |
+| `Value` | string（可选） | 新值字符串；导出时根据目标字段类型转换为 JSON 值；提供 `Value_Class_Id` 时可省略 |
+| `Value_Class_Id` | int（可选） | 要赋值的 ClassBuild 实例 ID；优先于 `Value`，适用于字段类型为复杂对象的场景；不提供时使用 `Value` |
 
 #### 响应
 
@@ -488,7 +491,43 @@ interface Data {
 
 ---
 
-### 8. 导出实例 `ExportClass`
+### 8. 删除数组元素 `RemoveElement`
+
+从数组/列表字段中删除指定下标的元素，下标从 0 开始。删除后，后续元素的下标自动前移。
+
+#### 请求
+
+```json
+{
+    "wsType": "RemoveElement",
+    "content": "{\"Class_Id\":1,\"Field_Path\":[\"requirements\"],\"Index\":0}"
+}
+```
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `Class_Id` | int | 实例 ID |
+| `Field_Path` | string[] | 指向数组字段的路径（与 `AddElement` 一致，不含 `#索引` 后缀） |
+| `Index` | int | 要删除的元素下标（非负整数） |
+
+#### 响应
+
+```json
+{
+    "wsType": "RemoveElement",
+    "out": true,
+    "dataList": {
+        "Success": { "boolean": true },
+        "Message": { "str": "" }
+    }
+}
+```
+
+失败时（例如下标越界、路径不指向数组字段）`Success` 为 `false`，`Message` 包含错误信息。
+
+---
+
+### 9. 导出实例 `ExportClass`
 
 获取整个类实例的完整 JSON 表示。
 
@@ -517,7 +556,7 @@ interface Data {
 
 ---
 
-### 9. 删除实例 `RemoveClass`
+### 10. 删除实例 `RemoveClass`
 
 #### 请求
 
@@ -542,7 +581,7 @@ interface Data {
 
 ---
 
-### 10. 获取字段文档 `FieldDoc`
+### 11. 获取字段文档 `FieldDoc`
 
 #### 请求
 
@@ -567,7 +606,7 @@ interface Data {
 
 ---
 
-### 11. 获取字段默认值 `FieldDefaultValue`
+### 12. 获取字段默认值 `FieldDefaultValue`
 
 #### 请求
 
@@ -594,7 +633,7 @@ interface Data {
 
 ---
 
-### 12. 获取预定义实例列表 `ClassInstance`
+### 13. 获取预定义实例列表 `ClassInstance`
 
 返回指定类型可赋值的 Mindustry 静态内容实例名。当前实现会从 `Blocks`、`Items`、`Liquids`、`UnitTypes`、`Planets` 等静态内容容器中收集字段值，再用 `targetClass.isAssignableFrom(instanceClass)` 过滤。
 
@@ -627,7 +666,7 @@ interface Data {
 
 ---
 
-### 13. 抓取文档 `FetchDoc`
+### 14. 抓取文档 `FetchDoc`
 
 从 Mindustry Wiki 的 Modding 文档抓取类型字段表，序列化为 `TypeMeta` JSON，并保存到 `Data_Dir/doc/` 子目录。文件名会经过安全过滤，只保留字母、数字、下划线、点和短横线。
 

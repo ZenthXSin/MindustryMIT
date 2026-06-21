@@ -155,7 +155,7 @@ open class JsonParser : IJsonParser {
     override fun getAllFields(className: String): List<FieldMeta> {
         getClassByName(className)?.fields
             ?.filter { it.isJsonVisibleField() }
-            ?.map { FieldMeta(it.name, it.type.name, "", "") }
+            ?.map { FieldMeta(it.name, it.type.canonicalName ?: it.type.name, "", "") }
             ?.let { return it }
 
         return allDocFields(className) ?: emptyList()

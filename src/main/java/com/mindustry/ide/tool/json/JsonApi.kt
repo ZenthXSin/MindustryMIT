@@ -197,7 +197,7 @@ class JsonApi {
                     .filter { Modifier.isStatic(it.modifiers) }
                     .forEach { field ->
                         val instance = runCatching { field.get(null) }.getOrNull() ?: field.type
-                        classInstance["${source.simpleName}.${field.name}"] = instance
+                        classInstance["${field.name}"] = instance
                     }
             }
         }
@@ -333,6 +333,7 @@ class JsonApi {
 
                     currentField = field
                     if (!isIndexSegment(path[index + 1])) {
+                        field.value.value = ""
                         current = field.value.typeValue
                         currentField = null
                     }
@@ -381,6 +382,36 @@ class JsonApi {
                 is PathTarget.FieldTarget -> t.field.value.toJson()
                 is PathTarget.ElementTarget -> t.build.toJson()
             }
+
+        private fun removeElement(classId: Int, path: List<String>, index: Int?) {
+            if (index == null) {
+                // 无 Index：从父 ClassBuild 中移除该字段
+                if (path.isEmpty()) fail("Field_Path 不能为空")
+                val fieldName = path.last()
+                val parent: ClassBuild = if (path.size == 1) {
+                    getClassBuild(classId)
+                } else {
+                    val parentPath = path.dropLast(1)
+                    when (val t = resolvePath(classId, parentPath, createMissing = false)) {
+                        is PathTarget.FieldTarget -> t.field.value.typeValue
+                        is PathTarget.ElementTarget -> t.build
+                    }
+                }
+                if (!parent.removeFieldBuild(fieldName)) {
+                    fail("字段 $fieldName 不存在或尚未设置")
+                }
+            } else {
+                // 有 Index：从数组字段中删除指定元素
+                val target = resolvePath(classId, path)
+                val field = (target as? PathTarget.FieldTarget)?.field
+                    ?: fail("RemoveElement 目标必须是字段，不能是数组元素")
+                val elements = field.value.elements ?: fail("字段 ${field.field.name} 没有元素")
+                if (index !in elements.indices) {
+                    fail("数组下标 $index 越界，字段 ${field.field.name} 当前长度 ${elements.size}")
+                }
+                elements.removeAt(index)
+            }
+        }
 
         private fun addElement(classId: Int, path: List<String>, elementTypeName: String, value: String): Int {
             val target = resolvePath(classId, path)
@@ -476,10 +507,10 @@ class JsonApi {
 
                     WebSocketDataType.AllField -> {
                         val className = data.dataList["Class_Name"]?.str ?: ""
-                        val fields = parser.getAllFields(className).map { it.name }
+                        val fields = parser.getAllFields(className)
                         val reply = WebSocketData.reply(
                             WebSocketDataType.AllField,
-                            mapOf("Field_List" to Data(list = fields.map { Data(str = it) }.toMutableList()))
+                            mapOf("Field_List" to Data(list = fields.map { Data(str = it.name, json = it.type) }.toMutableList()))
                         )
                         jsonFormat.encodeToString(WebSocketData.serializer(), reply)
                     }
@@ -591,6 +622,30 @@ class JsonApi {
                                 mapOf(
                                     "Success" to Data(boolean = false),
                                     "Index" to Data(int = -1),
+                                    "Message" to Data(str = e.message ?: e::class.java.name)
+                                )
+                            )
+                        }
+                        jsonFormat.encodeToString(WebSocketData.serializer(), reply)
+                    }
+
+                    WebSocketDataType.RemoveElement -> {
+                        val reply = try {
+                            val classId = data.dataList["Class_Id"]?.int ?: fail("Class_Id 不能为空")
+                            val index = data.dataList["Index"]?.int
+                            removeElement(classId, parsePath(data), index)
+                            WebSocketData.reply(
+                                WebSocketDataType.RemoveElement,
+                                mapOf(
+                                    "Success" to Data(boolean = true),
+                                    "Message" to Data()
+                                )
+                            )
+                        } catch (e: Exception) {
+                            WebSocketData.reply(
+                                WebSocketDataType.RemoveElement,
+                                mapOf(
+                                    "Success" to Data(boolean = false),
                                     "Message" to Data(str = e.message ?: e::class.java.name)
                                 )
                             )
@@ -844,7 +899,7 @@ data class WebSocketData(
             }
 
             for (i in wsType.input) {
-                val element = json[i.first] ?: throw IllegalArgumentException("缺少字段 ${i.first}")
+                val element = json[i.first] ?: continue
                 val iData = Data()
                 when (i.second) {
                     DataType.String -> {
@@ -970,6 +1025,17 @@ enum class WebSocketDataType(
         listOf(
             "Success" to DataType.Boolean,
             "Index" to DataType.Int,
+            "Message" to DataType.String
+        )
+    ),
+    RemoveElement(
+        listOf(
+            "Class_Id" to DataType.Int,
+            "Field_Path" to DataType.List,
+            "Index" to DataType.Int
+        ),
+        listOf(
+            "Success" to DataType.Boolean,
             "Message" to DataType.String
         )
     ),
