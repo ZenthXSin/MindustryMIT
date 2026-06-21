@@ -10,18 +10,23 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.java_websocket.WebSocket
 import org.java_websocket.handshake.ClientHandshake
+import org.java_websocket.server.DefaultSSLWebSocketServerFactory
 import org.java_websocket.server.WebSocketServer
 import mindustry.content.Blocks
 import mindustry.content.Bullets
 import mindustry.content.UnitTypes
 import java.io.File
+import java.io.FileInputStream
 import java.net.InetSocketAddress
 import java.lang.reflect.Modifier
+import java.security.KeyStore
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.ZipInputStream
+import javax.net.ssl.KeyManagerFactory
+import javax.net.ssl.SSLContext
 import mindustry.content.Fx
 import mindustry.content.Items
 import mindustry.content.Liquids
@@ -802,9 +807,12 @@ class JsonApi {
         class JsonApiWebSocketHandler(
             val toolData: ToolData = ToolData(),
             var port: Int = 19190,
-            private val bindHost: String = "127.0.0.1",
+            private val bindHost: String = System.getProperty("mindustrymit.bindHost", "0.0.0.0"),
             private val token: String? = System.getProperty("mindustrymit.wsToken")?.takeIf { it.isNotBlank() },
-            private val allowedOrigins: Set<String> = emptySet()
+            private val allowedOrigins: Set<String> = emptySet(),
+            private val useSSL: Boolean = System.getProperty("mindustrymit.useSSL", "false").toBoolean(),
+            private val keystorePath: String? = System.getProperty("mindustrymit.keystorePath"),
+            private val keystorePassword: String = System.getProperty("mindustrymit.keystorePassword", "mindustrymit")
         ) {
             private var server: Server? = null
 
@@ -814,6 +822,10 @@ class JsonApi {
                     return
                 }
                 val s = Server(InetSocketAddress(bindHost, port), this)
+                if (useSSL) {
+                    s.setWebSocketFactory(DefaultSSLWebSocketServerFactory(buildSSLContext()))
+                    toolData.info("SSL 已启用，使用 wss://")
+                }
                 server = s
                 s.start()
                 if (!s.startLatch.await(10, TimeUnit.SECONDS)) {
@@ -824,7 +836,47 @@ class JsonApi {
                     server = null
                     throw IllegalStateException("WebSocket 服务器启动失败: ${it.message}", it)
                 }
-                toolData.info("WebSocket 服务器启动在 $bindHost:$port")
+                val scheme = if (useSSL) "wss" else "ws"
+                toolData.info("WebSocket 服务器启动在 $scheme://$bindHost:$port")
+            }
+
+            private fun buildSSLContext(): SSLContext {
+                val ksFile = if (!keystorePath.isNullOrBlank()) {
+                    File(keystorePath)
+                } else {
+                    val defaultKs = File(ToolData.defaultDataRoot(), "mindustrymit.jks")
+                    if (!defaultKs.exists()) generateSelfSignedKeystore(defaultKs, keystorePassword)
+                    defaultKs
+                }
+                val ks = KeyStore.getInstance("JKS")
+                FileInputStream(ksFile).use { ks.load(it, keystorePassword.toCharArray()) }
+                val kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
+                kmf.init(ks, keystorePassword.toCharArray())
+                return SSLContext.getInstance("TLS").also { it.init(kmf.keyManagers, null, null) }
+            }
+
+            private fun generateSelfSignedKeystore(file: File, password: String) {
+                file.parentFile?.mkdirs()
+                val keytool = "${System.getProperty("java.home")}/bin/keytool"
+                val proc = ProcessBuilder(
+                    keytool, "-genkeypair",
+                    "-keyalg", "RSA", "-keysize", "2048",
+                    "-validity", "3650",
+                    "-dname", "CN=MindustryMIT,O=MindustryMIT,C=CN",
+                    "-keystore", file.absolutePath,
+                    "-storepass", password,
+                    "-keypass", password,
+                    "-alias", "mindustrymit"
+                ).redirectErrorStream(true).start()
+                if (!proc.waitFor(30, TimeUnit.SECONDS)) {
+                    proc.destroy()
+                    throw IllegalStateException("生成自签名证书超时")
+                }
+                if (proc.exitValue() != 0) {
+                    val output = proc.inputStream.bufferedReader().readText()
+                    throw IllegalStateException("生成自签名证书失败: $output")
+                }
+                toolData.info("自签名证书已生成: ${file.absolutePath}")
             }
 
             fun stop() {

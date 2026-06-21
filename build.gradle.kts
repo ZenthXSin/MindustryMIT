@@ -25,8 +25,8 @@ repositories{
 dependencies {
     // Mindustry Core
     val mindustryVersion = "v157.4"
-    compileOnly("com.github.Anuken.Mindustry:core:$mindustryVersion")
-    compileOnly("com.github.Anuken.Arc:arc-core:$mindustryVersion")
+    implementation("com.github.Anuken.Mindustry:core:$mindustryVersion")
+    implementation("com.github.Anuken.Arc:arc-core:$mindustryVersion")
 
     // Kotlin Serialization
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
