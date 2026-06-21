@@ -64,7 +64,7 @@ jobs:
         run: |
           mkdir -p release
           cp build/libs/tool-${{ steps.ver.outputs.version }}.jar "release/tool-${{ steps.ver.outputs.version }}.jar"
-          cp src/main/web/index.html "web.html"
+          cp src/main/web/index.html "release/web.html"
 
       - name: Create tag and GitHub Release
         uses: softprops/action-gh-release@v2
@@ -74,5 +74,6 @@ jobs:
           generate_release_notes: true
           files: |
             release/tool-${{ steps.ver.outputs.version }}.jar
+            release/web.html
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
