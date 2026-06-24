@@ -149,6 +149,149 @@ private fun primitiveJsonFor(type: Class<*>, rawValue: String): JsonElement {
     }
 }
 
+/**
+ * 特殊字段解析器接口
+ * 用于处理 ContentParser 中有专门分支的字段（如 consumes、requirements 等）
+ */
+interface SpecialFieldHandler {
+    /**
+     * 检查是否能处理该字段
+     */
+    fun canHandle(fieldName: String): Boolean
+    
+    /**
+     * 处理特殊字段，返回处理后的 ClassBuild 或 null
+     * @param element JSON 元素
+     * @param parser JSON 解析器
+     * @param ownerClassName 所有者类名
+     * @return 处理后的 ClassBuild，如果无法处理返回 null
+     */
+    fun handle(element: JsonElement, parser: IJsonParser, ownerClassName: String): ClassBuild?
+}
+
+/**
+ * 消耗器字段处理器
+ * 处理 Block 的 consumes 字段
+ */
+class ConsumeFieldHandler : SpecialFieldHandler {
+    override fun canHandle(fieldName: String): Boolean = fieldName == "consumes"
+    
+    override fun handle(element: JsonElement, parser: IJsonParser, ownerClassName: String): ClassBuild? {
+        if (element !is JsonObject) return null
+        
+        // 创建一个虚拟的 Consume 类构建
+        // 实际上 consumes 是一个包含多个子字段的对象
+        // 每个子字段（如 power、items、liquid）对应一个具体的 Consume 类型
+        val consumeBuild = ClassBuild(Block::class.java, parser)
+        consumeBuild.name = "consumes"
+        
+        for ((key, value) in element) {
+            // 为每个子字段创建 FieldBuild
+            // 这里需要根据 key 映射到具体的 Consume 类型
+            val consumeType = mapConsumeType(key)
+            if (consumeType != null) {
+                // 创建一个临时字段来存储这个 Consume
+                val tempField = createTempField(key, consumeType)
+                val fb = FieldBuild(tempField, parser, ownerClassName = ownerClassName)
+                applyJsonToFieldBuild(fb, value, tempField)
+                consumeBuild.addFieldBuild { fb }
+            }
+        }
+        
+        return consumeBuild
+    }
+    
+    private fun mapConsumeType(key: String): Class<*>? {
+        return when (key) {
+            "item" -> try { Class.forName("mindustry.world.consumers.ConsumeItem") } catch (_: Exception) { null }
+            "items" -> try { Class.forName("mindustry.world.consumers.ConsumeItems") } catch (_: Exception) { null }
+            "liquid" -> try { Class.forName("mindustry.world.consumers.ConsumeLiquid") } catch (_: Exception) { null }
+            "liquids" -> try { Class.forName("mindustry.world.consumers.ConsumeLiquids") } catch (_: Exception) { null }
+            "power" -> try { Class.forName("mindustry.world.consumers.ConsumePower") } catch (_: Exception) { null }
+            "powerBuffered" -> try { Class.forName("mindustry.world.consumers.ConsumePower") } catch (_: Exception) { null }
+            "coolant" -> try { Class.forName("mindustry.world.consumers.ConsumeCoolant") } catch (_: Exception) { null }
+            else -> null
+        }
+    }
+    
+    private fun createTempField(name: String, type: Class<*>): Field {
+        // 创建一个临时的 Field 对象用于存储
+        // 这是一个简化实现，实际可能需要更复杂的处理
+        return TempField(name, type)
+    }
+    
+    /**
+     * 临时字段实现，用于存储特殊字段
+     */
+    private class TempField(
+        private val fieldName: String,
+        private val fieldType: Class<*>
+    ) : Field(null, 0, null, null) {
+        override fun getName(): String = fieldName
+        override fun getType(): Class<*> = fieldType
+        // 其他方法使用默认实现
+    }
+}
+
+/**
+ * 需求字段处理器
+ * 处理 UnitType 的 requirements 字段
+ */
+class RequirementsFieldHandler : SpecialFieldHandler {
+    override fun canHandle(fieldName: String): Boolean = fieldName == "requirements"
+    
+    override fun handle(element: JsonElement, parser: IJsonParser, ownerClassName: String): ClassBuild? {
+        // requirements 字段需要特殊处理，因为它关联到 UnitFactory/Reconstructor
+        // 这里简化处理，将其作为普通对象
+        if (element !is JsonObject) return null
+        
+        val reqBuild = ClassBuild(Block::class.java, parser)
+        reqBuild.name = "requirements"
+        
+        for ((key, value) in element) {
+            val tempField = createTempField(key, Any::class.java)
+            val fb = FieldBuild(tempField, parser, ownerClassName = ownerClassName)
+            applyJsonToFieldBuild(fb, value, tempField)
+            reqBuild.addFieldBuild { fb }
+        }
+        
+        return reqBuild
+    }
+    
+    private fun createTempField(name: String, type: Class<*>): Field {
+        return TempField(name, type)
+    }
+    
+    private class TempField(
+        private val fieldName: String,
+        private val fieldType: Class<*>
+    ) : Field(null, 0, null, null) {
+        override fun getName(): String = fieldName
+        override fun getType(): Class<*> = fieldType
+    }
+}
+
+/**
+ * 特殊字段处理器注册表
+ */
+object SpecialFieldRegistry {
+    private val handlers = mutableListOf<SpecialFieldHandler>()
+    
+    init {
+        // 注册内置处理器
+        register(ConsumeFieldHandler())
+        register(RequirementsFieldHandler())
+    }
+    
+    fun register(handler: SpecialFieldHandler) {
+        handlers.add(handler)
+    }
+    
+    fun getHandler(fieldName: String): SpecialFieldHandler? {
+        return handlers.find { it.canHandle(fieldName) }
+    }
+}
+
 class JsonWorkFile(
     name: String,
     val parser: IJsonParser
@@ -183,12 +326,46 @@ class JsonWorkFile(
         val cb = ClassBuild(cls, parser)
         for ((key, element) in obj) {
             if (key == "type") continue
+            
+            // 优先检查特殊字段处理器
+            val specialHandler = SpecialFieldRegistry.getHandler(key)
+            if (specialHandler != null) {
+                val specialBuild = specialHandler.handle(element, parser, cb.name)
+                if (specialBuild != null) {
+                    // 特殊字段处理成功，添加到 fieldBuilds
+                    // 注意：这里需要特殊处理，因为 consumes 等字段不是普通的 Field
+                    // 我们将其存储为特殊的 FieldBuild
+                    val tempField = createTempField(key, Block::class.java)
+                    val fb = FieldBuild(tempField, parser, ownerClassName = cb.name)
+                    fb.value.typeValue = specialBuild
+                    fb.value.value = ""
+                    cb.addFieldBuild { fb }
+                    continue
+                }
+            }
+            
+            // 普通字段处理
             val field = cb.getFieldByName(key) ?: continue
             val fb = FieldBuild(field, parser, ownerClassName = cb.name)
             applyJsonToFieldBuild(fb, element, field)
             cb.addFieldBuild { fb }
         }
         return cb
+    }
+    
+    private fun createTempField(name: String, type: Class<*>): Field {
+        return TempField(name, type)
+    }
+    
+    /**
+     * 临时字段实现，用于存储特殊字段
+     */
+    private class TempField(
+        private val fieldName: String,
+        private val fieldType: Class<*>
+    ) : Field(null, 0, null, null) {
+        override fun getName(): String = fieldName
+        override fun getType(): Class<*> = fieldType
     }
 
     private fun applyJsonToFieldBuild(fb: FieldBuild, element: JsonElement, field: Field) {
