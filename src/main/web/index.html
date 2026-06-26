@@ -835,9 +835,34 @@ class DictManager {
         if (this._loading) return this._loading;
         this._loading = (async () => {
             const t0 = performance.now();
-            await localforage.iterate((value, key) => {
-                this._cache.set(key, value);
-            });
+            try {
+                // 先触发 localforage 初始化，获取数据库信息
+                await localforage.ready();
+                const dbName = localforage._dbInfo.name;
+                const storeName = localforage._dbInfo.storeName;
+                // 用 IndexedDB 原生 API 批量读取
+                const db = await new Promise((resolve, reject) => {
+                    const req = indexedDB.open(dbName);
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => reject(req.error);
+                });
+                const tx = db.transaction(storeName, 'readonly');
+                const store = tx.objectStore(storeName);
+                // getAllKeys + getAll 并行
+                const [keys, values] = await Promise.all([
+                    new Promise((res, rej) => { const r = store.getAllKeys(); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }),
+                    new Promise((res, rej) => { const r = store.getAll(); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); })
+                ]);
+                for (let i = 0; i < keys.length; i++) {
+                    this._cache.set(keys[i], values[i]);
+                }
+                db.close();
+            } catch (e) {
+                console.warn('[i18n] 批量读取失败，回退到 iterate', e);
+                await localforage.iterate((value, key) => {
+                    this._cache.set(key, value);
+                });
+            }
             this._loaded = true;
             this._loading = null;
             console.log(`[i18n] 内存缓存已加载，${this._cache.size} 条，耗时 ${Math.round(performance.now() - t0)}ms`);
@@ -868,26 +893,42 @@ class DictManager {
             const total = entries.length;
             console.log(`[i18n] 开始导入语言包，共 ${total} 条`);
             const t0 = performance.now();
-            // 直接写入内存缓存（同步，极快）
+
+            // 1. 写入内存缓存（同步，极快）
             for (const [key, value] of entries) {
-                let safeValue = (value === null || value === undefined) ? "" : String(value).trim();
-                if (safeValue === "null") safeValue = "";
-                this._cache.set(key, safeValue);
+                let sv = (value === null || value === undefined) ? "" : String(value).trim();
+                if (sv === "null") sv = "";
+                this._cache.set(key, sv);
             }
             this._loaded = true;
-            const t1 = performance.now();
-            console.log(`[i18n] 内存写入完成，${total} 条，耗时 ${Math.round(t1 - t0)}ms`);
-            // 批量写入 IndexedDB（异步持久化）
-            const BATCH = 500;
-            for (let i = 0; i < entries.length; i += BATCH) {
-                const batch = entries.slice(i, i + BATCH);
-                await Promise.all(batch.map(([k, v]) => {
-                    let sv = (v === null || v === undefined) ? "" : String(v).trim();
-                    if (sv === "null") sv = "";
-                    return localforage.setItem(k, sv);
-                }));
-                if (onProgress) onProgress(Math.round(Math.min(i + BATCH, total) / total * 100));
+            console.log(`[i18n] 内存写入完成，${total} 条，耗时 ${Math.round(performance.now() - t0)}ms`);
+
+            // 2. 按前缀分段，每段独立批量写入 IndexedDB
+            const segments = {};
+            for (const [k, v] of entries) {
+                const prefix = k.split('.')[0] || 'Other';
+                if (!segments[prefix]) segments[prefix] = [];
+                segments[prefix].push([k, v]);
             }
+            const segNames = Object.keys(segments);
+            console.log(`[i18n] 分段: ${segNames.map(s => `${s}(${segments[s].length})`).join(', ')}`);
+
+            // 3. 各段并行写入 IndexedDB
+            let done = 0;
+            await Promise.all(segNames.map(async prefix => {
+                const seg = segments[prefix];
+                const BATCH = 500;
+                for (let i = 0; i < seg.length; i += BATCH) {
+                    const batch = seg.slice(i, i + BATCH);
+                    await Promise.all(batch.map(([k, v]) => {
+                        let sv = (v === null || v === undefined) ? "" : String(v).trim();
+                        if (sv === "null") sv = "";
+                        return localforage.setItem(k, sv);
+                    }));
+                    done += batch.length;
+                    if (onProgress) onProgress(Math.round(done / total * 100));
+                }
+            }));
             console.log(`[i18n] IndexedDB 持久化完成，总耗时 ${Math.round(performance.now() - t0)}ms`);
             return true;
         } catch (e) {
@@ -1976,9 +2017,8 @@ const app = createApp({
                 try {
                     const resp = await fetch('MMIT中文语言包.json');
                     if (resp.ok) {
-                        const text = await resp.text();
-                        const imported = await i18n.importJSON(text);
-                        if (imported) console.log('[i18n] 已自动加载同目录语言包');
+                        await i18n.importJSON(await resp.text());
+                        console.log(`[i18n] 已自动加载同目录语言包，${i18n._cache.size} 条`);
                     }
                 } catch (e) { console.log('[i18n] 未找到同目录语言包，跳过'); }
 
