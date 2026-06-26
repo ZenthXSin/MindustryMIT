@@ -186,24 +186,24 @@
                 <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
             </button>
             
-            <div class="desktop-only relative group">
+            <div class="desktop-only relative" @click.stop="configMenuOpen = !configMenuOpen" v-click-outside="() => configMenuOpen = false">
                 <button class="bg-slate-800 dark:bg-idea-card hover:bg-slate-700 dark:hover:bg-idea-hover px-3 py-1.5 rounded text-sm font-medium transition-colors border border-slate-700 dark:border-idea-border flex items-center gap-1">
                     <span>配置与语言包</span>
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                 </button>
-                <div class="absolute right-0 mt-2 w-52 bg-white dark:bg-idea-panel rounded-md shadow-lg border border-slate-200 dark:border-idea-borderDark hidden group-hover:block z-50">
+                <div v-show="configMenuOpen" class="absolute right-0 mt-2 w-52 bg-white dark:bg-idea-panel rounded-md shadow-lg border border-slate-200 dark:border-idea-borderDark z-50">
                     <div class="px-4 py-1.5 text-[10px] text-slate-400 font-bold uppercase tracking-wider bg-slate-50 dark:bg-idea-card border-b border-slate-100 dark:border-idea-borderDark">语言包管理</div>
-                    <button @click="generateFullDict" class="w-full text-left px-4 py-2 text-sm text-indigo-600 dark:text-idea-keyword font-bold hover:bg-slate-100 dark:hover:bg-idea-hover flex items-center gap-2">
+                    <button @click="configMenuOpen = false; generateFullDict()" class="w-full text-left px-4 py-2 text-sm text-indigo-600 dark:text-idea-keyword font-bold hover:bg-slate-100 dark:hover:bg-idea-hover flex items-center gap-2">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
                         生成完整语言包
                     </button>
-                    <button @click="exportDict" class="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-idea-text hover:bg-slate-100 dark:hover:bg-idea-hover">导出本地语言包</button>
-                    <button @click="$refs.dictFileInput.click()" class="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-idea-text hover:bg-slate-100 dark:hover:bg-idea-hover">导入本地语言包</button>
-                    <button @click="resetDict" class="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-idea-dangerHover dark:hover:text-white transition-colors border-t border-slate-100 dark:border-idea-borderDark">重置语言包缓存</button>
-                    
+                    <button @click="configMenuOpen = false; exportDict()" class="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-idea-text hover:bg-slate-100 dark:hover:bg-idea-hover">导出本地语言包</button>
+                    <button @click="configMenuOpen = false; $refs.dictFileInput.click()" class="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-idea-text hover:bg-slate-100 dark:hover:bg-idea-hover">导入本地语言包</button>
+                    <button @click="configMenuOpen = false; resetDict()" class="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-idea-dangerHover dark:hover:text-white transition-colors border-t border-slate-100 dark:border-idea-borderDark">重置语言包缓存</button>
+
                     <div class="px-4 py-1.5 text-[10px] text-slate-400 font-bold uppercase tracking-wider bg-slate-50 dark:bg-idea-card border-y border-slate-100 dark:border-idea-borderDark mt-1">工程管理</div>
-                    <button @click="showImportDialog" class="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-idea-text hover:bg-slate-100 dark:hover:bg-idea-hover">导入工程</button>
-                    <button @click="showExportDialog" class="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-idea-text hover:bg-slate-100 dark:hover:bg-idea-hover">导出工程</button>
+                    <button @click="configMenuOpen = false; showImportDialog()" class="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-idea-text hover:bg-slate-100 dark:hover:bg-idea-hover">导入工程</button>
+                    <button @click="configMenuOpen = false; showExportDialog()" class="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-idea-text hover:bg-slate-100 dark:hover:bg-idea-hover">导出工程</button>
                 </div>
             </div>
             <input type="file" ref="dictFileInput" accept=".json" class="hidden" @change="importDict">
@@ -300,6 +300,26 @@
                     <div class="flex justify-between text-xs text-slate-500 dark:text-idea-textMuted font-mono">
                         <span>{{ dictCurrentTask }}</span>
                         <span>{{ dictProgress }}%</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </transition>
+
+    <!-- 模态框：导入语言包进度 -->
+    <transition name="modal">
+        <div v-if="isImportingDict" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-[80] flex items-center justify-center p-4 transition-colors">
+            <div class="modal-content bg-white dark:bg-idea-panel rounded-xl shadow-2xl p-6 w-full max-w-md flex flex-col border border-transparent dark:border-idea-borderDark transition-colors text-center">
+                <div class="my-4">
+                    <svg class="animate-spin h-12 w-12 text-indigo-600 dark:text-idea-keyword mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    <h3 class="text-lg font-bold text-slate-800 dark:text-idea-text mb-1">正在导入语言包</h3>
+                    <p class="text-xs text-slate-500 dark:text-idea-textMuted mb-4">正在写入本地缓存，请勿关闭网页...</p>
+                    <div class="w-full bg-slate-200 dark:bg-idea-bg rounded-full h-2.5 overflow-hidden mb-2">
+                        <div class="bg-indigo-600 dark:bg-idea-button h-2.5 rounded-full transition-all duration-200" :style="{ width: importDictProgress + '%' }"></div>
+                    </div>
+                    <div class="flex justify-between text-xs text-slate-500 dark:text-idea-textMuted font-mono">
+                        <span>写入缓存</span>
+                        <span>{{ importDictProgress }}%</span>
                     </div>
                 </div>
             </div>
@@ -708,9 +728,13 @@ localforage.config({
 });
 
 class DictManager {
-    async get(key) { return await localforage.getItem(key); }
+    async get(key) {
+        const val = await localforage.getItem(key);
+        return val;
+    }
     async set(key, value) {
-        const safeValue = (value === null || value === undefined) ? "" : String(value).trim();
+        let safeValue = (value === null || value === undefined) ? "" : String(value).trim();
+        if (safeValue === "null") safeValue = "";
         await localforage.setItem(key, safeValue);
         return safeValue;
     }
@@ -719,10 +743,28 @@ class DictManager {
         await localforage.iterate((value, key) => { dict[key] = value; });
         return JSON.stringify(dict, null, 2);
     }
-    async importJSON(jsonString) {
+    async importJSON(jsonString, onProgress) {
         try {
             const dict = JSON.parse(jsonString);
-            for (const [key, value] of Object.entries(dict)) { await this.set(key, value); }
+            const entries = Object.entries(dict);
+            const total = entries.length;
+            console.log(`[i18n] 开始导入语言包，共 ${total} 条`);
+            // 统计各类 key 数量
+            const keyStats = {};
+            for (const [key] of entries) {
+                const prefix = key.split('.').slice(0, 2).join('.');
+                keyStats[prefix] = (keyStats[prefix] || 0) + 1;
+            }
+            console.log('[i18n] Key 分布:', keyStats);
+            // 输出前 10 条 Field 相关 key 作为样本
+            const fieldSample = entries.filter(([k]) => k.startsWith('Field.')).slice(0, 10);
+            console.log('[i18n] Field 样本:', fieldSample);
+            for (let i = 0; i < total; i++) {
+                const [key, value] = entries[i];
+                await this.set(key, value);
+                if (onProgress) onProgress(Math.round(((i + 1) / total) * 100));
+            }
+            console.log(`[i18n] 导入完成，共写入 ${total} 条`);
             return true;
         } catch (e) {
             console.error("字典导入失败", e);
@@ -803,24 +845,26 @@ const DataProvider = {
         if (!className) return "";
         const dictKey = `Class.${className}.doc`;
         const localDoc = await i18n.get(dictKey);
-        if (localDoc !== null) return localDoc;
-
-        // 后端无 ClassDoc 接口，直接写入空字符串占位
-        await i18n.set(dictKey, "");
+        console.log(`[i18n] getClassDoc key="${dictKey}" cached="${localDoc}"`);
+        if (localDoc && localDoc !== "null") return localDoc;
         return "";
     },
     async getFieldDoc(className, fieldName) {
         if (!className || !fieldName) return "";
         const dictKey = `Field.${className}.${fieldName}.doc`;
         const localDoc = await i18n.get(dictKey);
-        if (localDoc !== null) return localDoc;
+        console.log(`[i18n] getFieldDoc key="${dictKey}" cached="${localDoc}"`);
+
+        if (localDoc && localDoc !== "null") return localDoc;
 
         let docStr = "";
         try {
             const res = await wsApi.send('FieldDoc', { Class_Name: className, Field_Name: fieldName });
             if (res && res.Field_Doc) docStr = typeof res.Field_Doc === 'string' ? res.Field_Doc : (res.Field_Doc.str || "");
-        } catch (e) { } 
-        await i18n.set(dictKey, docStr);
+            console.log(`[i18n] getFieldDoc WS返回 docStr="${docStr}"`);
+        } catch (e) { console.warn(`[i18n] getFieldDoc WS异常`, e); }
+        if (docStr) await i18n.set(dictKey, docStr);
+        console.log(`[i18n] getFieldDoc 最终返回="${docStr}"`);
         return docStr;
     },
     async getDisplayName(type, parentName, originalName) {
@@ -831,9 +875,16 @@ const DataProvider = {
         else return originalName;
 
         const localName = await i18n.get(dictKey);
-        if (localName !== null) return localName;
+        console.log(`[i18n] getDisplayName key="${dictKey}" cached="${localName}" original="${originalName}"`);
+        if (localName && localName !== "null") return localName;
 
-        await i18n.set(dictKey, originalName);
+        // 字段名缺少翻译时，自动缓存 camelCase → 可读名称
+        if (type === 'Field') {
+            const readable = originalName.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()).trim();
+            await i18n.set(dictKey, readable);
+            return readable;
+        }
+
         return originalName;
     }
 };
@@ -1218,6 +1269,19 @@ const EditorNode = {
 };
 
 const app = createApp({
+    directives: {
+        'click-outside': {
+            mounted(el, binding) {
+                el._clickOutsideHandler = (e) => {
+                    if (!el.contains(e.target)) binding.value();
+                };
+                document.addEventListener('click', el._clickOutsideHandler);
+            },
+            unmounted(el) {
+                document.removeEventListener('click', el._clickOutsideHandler);
+            }
+        }
+    },
     setup() {
         const wsUrl = ref('ws://121.199.60.4:8317'); 
         const dataDir = ref('.mindustrymit-data'); 
@@ -1244,10 +1308,13 @@ const app = createApp({
         const isGeneratingDict = ref(false);
         const dictProgress = ref(0);
         const dictCurrentTask = ref('');
+        const isImportingDict = ref(false);
+        const importDictProgress = ref(0);
 
         const leftDrawerOpen = ref(false);
         const previewOpen = ref(false);
         const mobileMenuOpen = ref(false);
+        const configMenuOpen = ref(false);
         const isMobile = ref(isMobileDevice());
         
         const isDarkMode = ref(document.documentElement.classList.contains('dark'));
@@ -1279,6 +1346,11 @@ const app = createApp({
             }
         };
 
+        // camelCase → 可读名称 (e.g. "outputItem" → "Output Item")
+        function camelToReadable(name) {
+            return name.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()).trim();
+        }
+
         const generateFullDict = async () => {
             if (!connected.value) { showToast('请先连接服务器', 'error'); return; }
             if (isGeneratingDict.value) return;
@@ -1295,17 +1367,36 @@ const app = createApp({
                 for (let i = 0; i < total; i++) {
                     const clsName = classes[i];
                     dictCurrentTask.value = `[${i+1}/${total}] 正在抓取 ${clsName}...`;
-                    
-                    await DataProvider.getClassDoc(clsName);
-                    await DataProvider.getDisplayName('Class', null, clsName);
+
+                    // Class doc/name — 如果缓存中没有则写入
+                    const classDocKey = `Class.${clsName}.doc`;
+                    if (!(await i18n.get(classDocKey))) {
+                        const doc = await DataProvider.getClassDoc(clsName);
+                        if (doc) await i18n.set(classDocKey, doc);
+                    }
+                    const classNameKey = `Class.${clsName}.name`;
+                    if (!(await i18n.get(classNameKey))) {
+                        await i18n.set(classNameKey, clsName);
+                    }
 
                     try {
                         const fRes = await wsApi.send('AllField', { Class_Name: clsName });
                         if (fRes && fRes.Field_List) {
                             for (const f of fRes.Field_List) {
                                 const fName = typeof f === 'string' ? f : (f.str || String(f));
-                                await DataProvider.getFieldDoc(clsName, fName);
-                                await DataProvider.getDisplayName('Field', clsName, fName);
+
+                                // Field name — 如果缓存中没有则写入
+                                const fieldNameKey = `Field.${clsName}.${fName}.name`;
+                                if (!(await i18n.get(fieldNameKey))) {
+                                    await i18n.set(fieldNameKey, camelToReadable(fName));
+                                }
+
+                                // Field doc — 如果缓存中没有则从服务器获取并写入
+                                const fieldDocKey = `Field.${clsName}.${fName}.doc`;
+                                if (!(await i18n.get(fieldDocKey))) {
+                                    const doc = await DataProvider.getFieldDoc(clsName, fName);
+                                    if (doc) await i18n.set(fieldDocKey, doc);
+                                }
                             }
                         }
                     } catch (e) { console.warn(`抓取 ${clsName} 字段失败`, e); }
@@ -1333,14 +1424,42 @@ const app = createApp({
         const importDict = async (event) => {
             const file = event.target.files[0];
             if (!file) return;
+            if (isImportingDict.value) return;
             const reader = new FileReader();
             reader.onload = async (e) => {
-                const success = await i18n.importJSON(e.target.result);
-                if (success) showToast('语言包导入成功，刷新生效', 'success');
-                else showToast('语言包格式错误', 'error');
+                isImportingDict.value = true;
+                importDictProgress.value = 0;
+                try {
+                    const success = await i18n.importJSON(e.target.result, (p) => { importDictProgress.value = p; });
+                    if (success) {
+                        // 刷新 allFields 以应用新语言包
+                        if (connected.value && selectedClass.value) {
+                            try {
+                                const fRes = await wsApi.send('AllField', { Class_Name: selectedClass.value });
+                                if (fRes.Field_List) {
+                                    const fieldsPromises = fRes.Field_List.map(async f => {
+                                        const fieldName = typeof f === 'string' ? f : (f.str || String(f));
+                                        const fieldType = typeof f === 'string' ? 'String' : (f.json || 'String');
+                                        const docStr = await DataProvider.getFieldDoc(selectedClass.value, fieldName);
+                                        const displayName = await DataProvider.getDisplayName('Field', selectedClass.value, fieldName);
+                                        return { name: fieldName, displayName, type: fieldType, doc: docStr === "" ? "暂无描述" : docStr };
+                                    });
+                                    allFields.value = (await Promise.all(fieldsPromises)).sort((a, b) => a.name.localeCompare(b.name));
+                                    console.log('[i18n] 导入后刷新 allFields 结果:', allFields.value.map(f => ({ name: f.name, displayName: f.displayName, doc: f.doc })));
+                                }
+                            } catch (err) { console.warn('刷新字段列表失败', err); }
+                        }
+                        showToast('语言包导入成功', 'success');
+                    }
+                    else showToast('语言包格式错误', 'error');
+                } catch (err) {
+                    showToast('导入失败: ' + (err.message || err), 'error');
+                } finally {
+                    isImportingDict.value = false;
+                }
             };
             reader.readAsText(file);
-            event.target.value = ''; 
+            event.target.value = '';
         };
 
         onMounted(() => { window.addEventListener('ws-error', (e) => showToast(e.detail, 'error')); });
@@ -1417,6 +1536,7 @@ const app = createApp({
                         return { name: fieldName, displayName: displayName, type: fieldType, doc: displayDoc };
                     });
                     allFields.value = (await Promise.all(fieldsPromises)).sort((a, b) => a.name.localeCompare(b.name));
+                    console.log('[i18n] createInstance 加载 allFields:', allFields.value.map(f => ({ name: f.name, displayName: f.displayName, doc: f.doc })));
                 } else allFields.value = [];
 
                 rootNodes.value = []; searchQuery.value = '';
@@ -1513,6 +1633,7 @@ const app = createApp({
                             return { name: fieldName, displayName: displayName, type: fieldType, doc: displayDoc };
                         });
                         allFields.value = (await Promise.all(fieldsPromises)).sort((a, b) => a.name.localeCompare(b.name));
+                        console.log('[i18n] importProject 加载 allFields:', allFields.value.map(f => ({ name: f.name, displayName: f.displayName, doc: f.doc })));
                     }
 
                     const res = await wsApi.send('ExportClass', { Class_Id: newClassId });
@@ -1566,8 +1687,9 @@ const app = createApp({
             showImportDialog, showExportDialog, exportProject, exportJsonFile, importProject,
             collapseAll, expandAll, isDarkMode, toggleTheme,
             exportDict, importDict, generateFullDict, isGeneratingDict, dictProgress, dictCurrentTask, resetDict,
+            isImportingDict, importDictProgress,
             leftDrawerOpen, openLeftDrawer, previewOpen, togglePreviewPanel,
-            mobileMenuOpen, showMobileMenu, isMobile, toasts
+            mobileMenuOpen, showMobileMenu, isMobile, toasts, configMenuOpen
         };
     }
 });
