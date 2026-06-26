@@ -22,6 +22,8 @@ import java.lang.reflect.Modifier
 import java.security.KeyStore
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.ZipInputStream
@@ -61,19 +63,15 @@ class JsonApi {
         private val registeredClasses: MutableMap<String, Class<*>> = ConcurrentHashMap()
         private val nextId: AtomicInteger = AtomicInteger()
         private val dataRoot: File = dataRoot.absoluteFile
+        private val lastAccessMap: ConcurrentHashMap<Int, Long> = ConcurrentHashMap()
+        val maxInstances: Int = System.getProperty("mindustrymit.maxInstances", "100").toInt()
+        val instanceTtlMs: Long = System.getProperty("mindustrymit.instanceTtlMinutes", "30").toLong() * 60_000
+        private var cleanupScheduler: ScheduledExecutorService? = null
 
-        var error: (String) -> Unit = {
-            println("Error: $it")
-        }
-        var info: (String) -> Unit = {
-            println("Info: $it")
-        }
-        var warning: (String) -> Unit = {
-            println("Warning: $it")
-        }
-        var debug: (String) -> Unit = {
-            println("Debug: $it")
-        }
+        var error: (String) -> Unit = { println("[ERR] $it") }
+        var info: (String) -> Unit = { println("[INF] $it") }
+        var warning: (String) -> Unit = { println("[WRN] $it") }
+        var debug: (String) -> Unit = { println("[DBG] $it") }
 
         data class InitResult(val success: Boolean, val docCount: Int, val message: String)
 
@@ -129,6 +127,7 @@ class JsonApi {
                 }
 
                 markerFile.writeText("docDir=${docDir.absolutePath}\ndocCount=$docCount\n", Charsets.UTF_8)
+                if (cleanupScheduler == null) startCleanupScheduler()
                 InitResult(true, docCount, "Initialized from ${docDir.absolutePath}")
 
             } catch (e: Exception) {
@@ -172,7 +171,7 @@ class JsonApi {
                 }
             }
 
-            debug("Extracted bundled docs: ${bundledDoc.first} -> ${docDir.absolutePath}")
+            debug("解压内置文档: ${docDir.absolutePath}")
             return true
         }
 
@@ -205,6 +204,10 @@ class JsonApi {
                         classInstance["${field.name}"] = instance
                     }
             }
+        }
+
+        private fun touch(classId: Int) {
+            lastAccessMap[classId] = System.currentTimeMillis()
         }
 
         private fun classOfInstance(instance: Any): Class<*> {
@@ -251,26 +254,22 @@ class JsonApi {
         }
 
         fun newClass(className: String): Int {
+            if (classBuildMap.size >= maxInstances) {
+                fail("实例数已达上限 ($maxInstances)")
+            }
             val id = nextId.getAndIncrement()
             val tool = Tool(ApiJsonEditorTool(parser))
             classDataMap[id] = tool
             classBuildMap[id] = ClassBuild(resolveClass(className), parser)
-            debug("----------")
-            debug("创建类: $className, ID: $id")
-            debug("----------")
+            touch(id)
+            debug("+Class $className #$id")
             return id
         }
 
         fun removeClass(classId: Int): Boolean {
-            debug("----------")
-            if (classDataMap.containsKey(classId)) {
-                debug("类 $classId 存在")
-            } else {
-                debug("类 $classId 不存在")
-            }
-            debug("删除类: $classId")
-            debug("----------")
+            debug("-Class #$classId ${if (classDataMap.containsKey(classId)) "" else "(不存在)"}")
             classBuildMap.remove(classId)
+            lastAccessMap.remove(classId)
             return classDataMap.remove(classId) != null
         }
 
@@ -348,8 +347,9 @@ class JsonApi {
             fail("无法解析 Field_Path: $path")
         }
 
-        private fun setFieldValue(classId: Int, path: List<String>, value: String): String =
-            when (val t = resolvePath(classId, path)) {
+        private fun setFieldValue(classId: Int, path: List<String>, value: String): String {
+            touch(classId)
+            return when (val t = resolvePath(classId, path)) {
                 is PathTarget.FieldTarget -> {
                     t.field.value.value = value
                     t.field.value.elements = null
@@ -362,9 +362,11 @@ class JsonApi {
                     t.build.toJson()
                 }
             }
+        }
 
-        private fun setFieldValueByBuild(classId: Int, path: List<String>, valueBuild: ClassBuild): String =
-            when (val t = resolvePath(classId, path)) {
+        private fun setFieldValueByBuild(classId: Int, path: List<String>, valueBuild: ClassBuild): String {
+            touch(classId)
+            return when (val t = resolvePath(classId, path)) {
                 is PathTarget.FieldTarget -> {
                     t.field.value.typeValue = valueBuild
                     t.field.value.value = ""
@@ -381,14 +383,18 @@ class JsonApi {
                     t.build.toJson()
                 }
             }
+        }
 
-        private fun getFieldValue(classId: Int, path: List<String>): String =
-            when (val t = resolvePath(classId, path, createMissing = false)) {
+        private fun getFieldValue(classId: Int, path: List<String>): String {
+            touch(classId)
+            return when (val t = resolvePath(classId, path, createMissing = false)) {
                 is PathTarget.FieldTarget -> t.field.value.toJson()
                 is PathTarget.ElementTarget -> t.build.toJson()
             }
+        }
 
         private fun removeElement(classId: Int, path: List<String>, index: Int?) {
+            touch(classId)
             if (index == null) {
                 // 无 Index：从父 ClassBuild 中移除该字段
                 if (path.isEmpty()) fail("Field_Path 不能为空")
@@ -419,6 +425,7 @@ class JsonApi {
         }
 
         private fun addElement(classId: Int, path: List<String>, elementTypeName: String, value: String): Int {
+            touch(classId)
             val target = resolvePath(classId, path)
             val field = (target as? PathTarget.FieldTarget)?.field
                 ?: fail("AddElement 目标必须是字段，不能是数组元素")
@@ -440,6 +447,7 @@ class JsonApi {
         }
 
         private fun exportClass(classId: Int): String {
+            touch(classId)
             return getClassBuild(classId).toJson()
         }
 
@@ -450,6 +458,32 @@ class JsonApi {
 
         private fun fail(message: String): Nothing {
             throw IllegalArgumentException(message)
+        }
+
+        private fun cleanupExpired() {
+            val now = System.currentTimeMillis()
+            val expired = lastAccessMap.entries
+                .filter { now - it.value > instanceTtlMs }
+                .map { it.key }
+            if (expired.isEmpty()) return
+            expired.forEach { id ->
+                classDataMap.remove(id)
+                classBuildMap.remove(id)
+                lastAccessMap.remove(id)
+            }
+            debug("回收 ${expired.size} 个过期实例")
+        }
+
+        private fun startCleanupScheduler() {
+            cleanupScheduler = Executors.newSingleThreadScheduledExecutor { r ->
+                Thread(r, "mit-cleanup").apply { isDaemon = true }
+            }
+            cleanupScheduler!!.scheduleAtFixedRate(::cleanupExpired, 5, 5, TimeUnit.MINUTES)
+        }
+
+        fun stopCleanupScheduler() {
+            cleanupScheduler?.shutdownNow()
+            cleanupScheduler = null
         }
 
         fun errorResponse(message: String, sourceType: WebSocketDataType? = null): String {
@@ -818,26 +852,25 @@ class JsonApi {
 
             fun start() {
                 if (server != null) {
-                    toolData.info("WebSocket 服务器已在运行")
+                    toolData.info("服务器已在运行")
                     return
                 }
                 val s = Server(InetSocketAddress(bindHost, port), this)
                 if (useSSL) {
                     s.setWebSocketFactory(DefaultSSLWebSocketServerFactory(buildSSLContext()))
-                    toolData.info("SSL 已启用，使用 wss://")
                 }
                 server = s
                 s.start()
                 if (!s.startLatch.await(10, TimeUnit.SECONDS)) {
                     server = null
-                    throw IllegalStateException("WebSocket 服务器启动超时: $bindHost:$port")
+                    throw IllegalStateException("启动超时: $bindHost:$port")
                 }
                 s.startError?.let {
                     server = null
-                    throw IllegalStateException("WebSocket 服务器启动失败: ${it.message}", it)
+                    throw IllegalStateException("启动失败: ${it.message}", it)
                 }
                 val scheme = if (useSSL) "wss" else "ws"
-                toolData.info("WebSocket 服务器启动在 $scheme://$bindHost:$port")
+                toolData.info("启动 $scheme://$bindHost:$port")
             }
 
             private fun buildSSLContext(): SSLContext {
@@ -876,16 +909,17 @@ class JsonApi {
                     val output = proc.inputStream.bufferedReader().readText()
                     throw IllegalStateException("生成自签名证书失败: $output")
                 }
-                toolData.info("自签名证书已生成: ${file.absolutePath}")
+                toolData.info("自签名证书已生成")
             }
 
             fun stop() {
+                toolData.stopCleanupScheduler()
                 server?.let {
                     try {
                         it.stop(1000)
-                        toolData.info("WebSocket 服务器已停止")
+                        toolData.info("服务器已停止")
                     } catch (e: Exception) {
-                        toolData.error("停止服务器失败: ${e.message}")
+                        toolData.error("停止失败: ${e.message}")
                     } finally {
                         server = null
                     }
@@ -894,7 +928,6 @@ class JsonApi {
 
             fun broadcast(message: String) {
                 server?.broadcast(message)
-                toolData.debug("广播消息: $message")
             }
 
             private fun isOriginAllowed(handshake: ClientHandshake): Boolean {
@@ -931,22 +964,20 @@ class JsonApi {
                         conn.close(1008, "Origin not allowed")
                         return
                     }
-                    handler.toolData.info("客户端连接: ${conn.remoteSocketAddress}")
+                    handler.toolData.info("+连接 ${conn.remoteSocketAddress}")
                 }
 
                 override fun onMessage(conn: WebSocket, message: String) {
-                    handler.toolData.debug("收到消息: ${message.take(240)}")
                     if (!handler.isAuthorized(message)) {
-                        conn.send(handler.toolData.errorResponse("未授权的 WebSocket 请求"))
+                        conn.send(handler.toolData.errorResponse("未授权"))
                         return
                     }
                     val response = handler.toolData.contentParsing(message)
                     conn.send(response)
-                    handler.toolData.debug("回复消息: $response")
                 }
 
                 override fun onClose(conn: WebSocket, code: Int, reason: String, remote: Boolean) {
-                    handler.toolData.info("客户端断开: ${conn.remoteSocketAddress}, 原因: $reason")
+                    handler.toolData.info("-断开 ${conn.remoteSocketAddress}")
                 }
 
                 override fun onError(conn: WebSocket?, ex: Exception) {
@@ -954,11 +985,11 @@ class JsonApi {
                         startError = ex
                         startLatch.countDown()
                     }
-                    handler.toolData.error("WebSocket 错误: ${ex.message}")
+                    handler.toolData.error("${ex.message}")
                 }
 
                 override fun onStart() {
-                    handler.toolData.info("WebSocket 服务器已启动")
+                    handler.toolData.info("服务器已就绪")
                     startLatch.countDown()
                 }
             }
