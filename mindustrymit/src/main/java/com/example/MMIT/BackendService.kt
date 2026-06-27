@@ -14,17 +14,26 @@ class BackendService : Service() {
     private var jsonApi: JsonApi? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(NOTIF_ID, buildNotification("正在启动..."))
+        startForeground(NOTIF_ID, buildNotification("运行中"))
         thread(isDaemon = true) { startBackend() }
         return START_STICKY
     }
 
+    private fun sendLog(msg: String) {
+        sendBroadcast(Intent(MainActivity.ACTION_LOG).putExtra("message", msg))
+    }
+
     private fun startBackend() {
+        sendLog("[INIT] 正在加载 Mindustry 内容...")
         try {
             arc.Core.settings = arc.Settings()
             mindustry.core.ContentLoader().load()
-        } catch (_: Exception) {}
+            sendLog("[INIT] 内容加载完成")
+        } catch (e: Exception) {
+            sendLog("[WARN] 内容加载异常: ${e.message}")
+        }
 
+        sendLog("[HTTP] 启动 Web 服务器 -> 0.0.0.0:${HTTP_PORT}")
         httpServer = object : NanoHTTPD(HTTP_PORT) {
             override fun serve(session: IHTTPSession): Response {
                 val html = assets.open("web.html").bufferedReader().readText()
@@ -32,13 +41,17 @@ class BackendService : Service() {
             }
         }.also { it.start() }
 
+        sendLog("[WS]   启动 WebSocket 服务器 -> 0.0.0.0:${WS_PORT}")
         jsonApi = JsonApi().also {
             it.server.port = WS_PORT
             it.server.start()
         }
 
+        sendLog("[READY] 服务已就绪")
+        sendLog("[OPEN]  http://127.0.0.1:${HTTP_PORT}")
+
         getSystemService(NotificationManager::class.java)
-            .notify(NOTIF_ID, buildNotification("服务运行中 · 端口 $WS_PORT"))
+            .notify(NOTIF_ID, buildNotification("运行中 · HTTP:$HTTP_PORT · WS:$WS_PORT"))
         sendBroadcast(Intent(ACTION_BACKEND_READY))
     }
 

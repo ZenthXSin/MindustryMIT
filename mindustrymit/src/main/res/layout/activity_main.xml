@@ -2,18 +2,25 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:gravity="center"
-    android:orientation="vertical">
+    android:orientation="vertical"
+    android:background="#1e1e1e">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="MindustryMIT 正在启动..."
-        android:textSize="18sp" />
+    <ScrollView
+        android:id="@+id/consoleScroll"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:padding="12dp">
 
-    <ProgressBar
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp" />
+        <TextView
+            android:id="@+id/consoleOutput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#00ff00"
+            android:textSize="12sp"
+            android:fontFamily="monospace"
+            android:text=""
+            android:scrollbars="vertical" />
+
+    </ScrollView>
 
 </LinearLayout>
