@@ -38,7 +38,7 @@ jobs:
         run: |
           cat > local.properties <<EOF
           sdk.dir=${{ runner.tool_cache }}/Android/Sdk
-          KEYSTORE_PATH=mindustrymit/release.jks
+          KEYSTORE_PATH=release.jks
           KEYSTORE_PASSWORD=mmit1234
           KEY_ALIAS=mmit
           KEY_PASSWORD=mmit1234
