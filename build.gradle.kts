@@ -3,6 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.jvm") version "2.3.21"
     kotlin("plugin.serialization") version "2.3.21"
     id("com.gradleup.shadow") version "8.3.6"
+    id("com.android.application") version "9.0.0-alpha06" apply false
     `maven-publish`
 }
 
@@ -25,8 +26,8 @@ repositories{
 dependencies {
     // Mindustry Core
     val mindustryVersion = "v157.4"
-    implementation("com.github.Anuken.Mindustry:core:$mindustryVersion")
-    implementation("com.github.Anuken.Arc:arc-core:$mindustryVersion")
+    api("com.github.Anuken.Mindustry:core:$mindustryVersion")
+    api("com.github.Anuken.Arc:arc-core:$mindustryVersion")
 
     // Kotlin Serialization
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
