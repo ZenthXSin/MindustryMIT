@@ -56,6 +56,8 @@ open class JsonParser : IJsonParser {
     // 类&字段 文档
     val classDocs = mutableMapOf<String, TypeMeta>()
     val fieldDocs = mutableMapOf<String, MutableMap<String, FieldMeta>>()
+    // 自定义字段（AddField API 添加）
+    val customFields = mutableMapOf<String, MutableMap<String, FieldMeta>>()
     
     // 类映射（getter 延迟加载；在无 Mindustry 环境下安全返回 null）
     override val classMap: ObjectMap<String?, Class<*>?>?
@@ -153,12 +155,44 @@ open class JsonParser : IJsonParser {
 
     // 所有字段
     override fun getAllFields(className: String): List<FieldMeta> {
+        val fieldsByName = linkedMapOf<String, FieldMeta>()
+
+        // 运行时反射字段
         getClassByName(className)?.fields
             ?.filter { it.isJsonVisibleField() }
-            ?.map { FieldMeta(it.name, it.type.canonicalName ?: it.type.name, "", "") }
-            ?.let { return it }
+            ?.forEach { field ->
+                fieldsByName[field.name] = FieldMeta(field.name, field.type.canonicalName ?: field.type.name, "", "")
+            }
 
-        return allDocFields(className) ?: emptyList()
+        // 自定义字段（AddField API）
+        customFields[fieldKey(className)]?.forEach { (name, field) ->
+            fieldsByName[name] = field
+        }
+
+        return fieldsByName.values.toList()
+    }
+
+    fun addField(className: String, fieldName: String, fieldType: String, defaultValue: String, notes: String, applyToSubclasses: Boolean): List<String> {
+        val affectedClasses = mutableListOf<String>()
+
+        addFieldToClass(className, fieldName, fieldType, defaultValue, notes)
+        affectedClasses.add(className)
+
+        if (applyToSubclasses) {
+            val subclasses = getAllClassesByParent(className).filter { it != className }
+            for (sub in subclasses) {
+                addFieldToClass(sub, fieldName, fieldType, defaultValue, notes)
+                affectedClasses.add(sub)
+            }
+        }
+
+        return affectedClasses
+    }
+
+    private fun addFieldToClass(className: String, fieldName: String, fieldType: String, defaultValue: String, notes: String) {
+        val key = fieldKey(className)
+        val fieldMap = customFields.getOrPut(key) { mutableMapOf() }
+        fieldMap[fieldName] = FieldMeta(fieldName, fieldType, defaultValue, notes)
     }
 
     // 所有类

@@ -370,6 +370,8 @@ class FieldBuild(
             .removeSuffix("}")
     }
 
+    fun toValueJson(): String = json.encodeToString(toJsonElement())
+
     companion object {
         val defaultValues = mapOf(
             Int::class.java to { "0" },

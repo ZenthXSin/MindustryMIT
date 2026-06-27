@@ -37,6 +37,8 @@ import mindustry.content.Planets
 import mindustry.content.SectorPresets
 import mindustry.content.StatusEffects
 import mindustry.content.Weathers
+import mindustry.gen.Sounds
+import mindustry.type.Category
 
 
 /**
@@ -195,7 +197,9 @@ class JsonApi {
                 Planets::class.java,
                 SectorPresets::class.java,
                 StatusEffects::class.java,
-                Weathers::class.java
+                Weathers::class.java,
+                Category::class.java,
+                Sounds::class.java
             ).forEach { source ->
                 source.fields
                     .filter { Modifier.isStatic(it.modifiers) }
@@ -353,7 +357,7 @@ class JsonApi {
                 is PathTarget.FieldTarget -> {
                     t.field.value.value = value
                     t.field.value.elements = null
-                    t.field.value.toJson()
+                    t.field.toValueJson()
                 }
 
                 is PathTarget.ElementTarget -> {
@@ -371,7 +375,7 @@ class JsonApi {
                     t.field.value.typeValue = valueBuild
                     t.field.value.value = ""
                     t.field.value.elements = null
-                    t.field.value.toJson()
+                    t.field.toValueJson()
                 }
 
                 is PathTarget.ElementTarget -> {
@@ -388,7 +392,7 @@ class JsonApi {
         private fun getFieldValue(classId: Int, path: List<String>): String {
             touch(classId)
             return when (val t = resolvePath(classId, path, createMissing = false)) {
-                is PathTarget.FieldTarget -> t.field.value.toJson()
+                is PathTarget.FieldTarget -> t.field.toValueJson()
                 is PathTarget.ElementTarget -> t.build.toJson()
             }
         }
@@ -813,6 +817,37 @@ class JsonApi {
                         jsonFormat.encodeToString(WebSocketData.serializer(), reply)
                     }
 
+                    WebSocketDataType.AddField -> {
+                        val reply = try {
+                            val className = data.dataList["Class_Name"]?.str ?: fail("Class_Name 不能为空")
+                            val fieldName = data.dataList["Field_Name"]?.str ?: fail("Field_Name 不能为空")
+                            val fieldType = data.dataList["Field_Type"]?.str ?: "String"
+                            val defaultValue = data.dataList["Default_Value"]?.str ?: ""
+                            val notes = data.dataList["Notes"]?.str ?: ""
+                            val applyToSubclasses = data.dataList["Apply_To_Subclasses"]?.boolean ?: true
+
+                            val affected = parser.addField(className, fieldName, fieldType, defaultValue, notes, applyToSubclasses)
+
+                            WebSocketData.reply(
+                                WebSocketDataType.AddField,
+                                mapOf(
+                                    "Success" to Data(boolean = true),
+                                    "Affected_Classes" to Data(int = affected.size),
+                                    "Message" to Data(str = "已添加到 ${affected.joinToString(", ")}")
+                                )
+                            )
+                        } catch (e: Exception) {
+                            WebSocketData.reply(
+                                WebSocketDataType.AddField,
+                                mapOf(
+                                    "Success" to Data(boolean = false),
+                                    "Affected_Classes" to Data(int = 0),
+                                    "Message" to Data(str = e.message ?: e::class.java.name)
+                                )
+                            )
+                        }
+                        jsonFormat.encodeToString(WebSocketData.serializer(), reply)
+                    }
 
                 }
             } catch (e: Exception) {
@@ -1190,6 +1225,21 @@ enum class WebSocketDataType(
             "Modes" to DataType.List,
             "String_Source" to DataType.String,
             "Default_Type" to DataType.String
+        )
+    ),
+    AddField(
+        listOf(
+            "Class_Name" to DataType.String,
+            "Field_Name" to DataType.String,
+            "Field_Type" to DataType.String,
+            "Default_Value" to DataType.String,
+            "Notes" to DataType.String,
+            "Apply_To_Subclasses" to DataType.Boolean
+        ),
+        listOf(
+            "Success" to DataType.Boolean,
+            "Affected_Classes" to DataType.Int,
+            "Message" to DataType.String
         )
     ),
 }

@@ -621,6 +621,9 @@
                 <span v-else-if="node.isArray" class="text-idea-number cursor-default">
                     Array [{{ node.children.length }}]
                 </span>
+                <span v-else-if="node.value === 'true' || node.value === 'false'" class="truncate block cursor-default" :class="node.value === 'true' ? 'text-indigo-600 dark:text-idea-keyword' : 'text-slate-400 dark:text-idea-textMuted'">
+                    {{ node.value }}
+                </span>
                 <span v-else class="text-idea-string truncate block cursor-default">
                     {{ node.value === '' ? 'null' : `"${node.value}"` }}
                 </span>
@@ -651,7 +654,7 @@
             </div>
             
             <!-- Key 名称 -->
-            <div class="flex items-center shrink-0 cursor-pointer" @click.stop="toggleCollapse">
+            <div class="flex items-center shrink-0 cursor-pointer" @click.stop="toggleCollapse" @contextmenu.prevent="showContextMenu" @touchstart.prevent="onTouchStart" @touchend="onTouchEnd" @touchmove="onTouchMove" @touchcancel="onTouchCancel">
                 <span class="json-key">{{ node.key }}</span>
                 <span class="json-bracket mx-0.5">:</span>
             </div>
@@ -661,8 +664,19 @@
                 
                 <!-- 1. 基本类型文本输入 -->
                 <template v-if="displayMode === 'leaf-text'">
-                    <input type="text" v-model="node.value" @blur="saveValue" @keyup.enter="saveValue" class="json-input json-string" placeholder="null">
-                    <svg v-if="saving" class="animate-spin h-3 w-3 text-indigo-500 ml-1 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    <!-- 布尔值开关 -->
+                    <template v-if="isBooleanField">
+                        <button @click="toggleBoolean" :class="['relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-200 focus:outline-none', node.value === 'true' ? 'bg-indigo-600 dark:bg-idea-button' : 'bg-slate-300 dark:bg-slate-600']">
+                            <span :class="['inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform duration-200', node.value === 'true' ? 'translate-x-[18px]' : 'translate-x-[3px]']"></span>
+                        </button>
+                        <span class="text-[11px] ml-1.5" :class="node.value === 'true' ? 'text-indigo-600 dark:text-idea-keyword' : 'text-slate-400 dark:text-idea-textMuted'">{{ node.value === 'true' ? 'true' : 'false' }}</span>
+                        <svg v-if="saving" class="animate-spin h-3 w-3 text-indigo-500 ml-1 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    </template>
+                    <!-- 其他基本类型文本输入 -->
+                    <template v-else>
+                        <input type="text" v-model="node.value" @blur="saveValue" @keyup.enter="saveValue" class="json-input json-string" placeholder="null">
+                        <svg v-if="saving" class="animate-spin h-3 w-3 text-indigo-500 ml-1 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    </template>
                 </template>
 
                 <!-- 2. 需要选择类型/实例 -->
@@ -811,6 +825,42 @@
                 </div>
             </div>
         </transition>
+
+        <!-- 右键菜单 -->
+        <transition name="fade">
+            <div v-if="contextMenuVisible" class="fixed z-[80] bg-white dark:bg-idea-panel rounded-lg shadow-xl border border-slate-200 dark:border-idea-border py-1 min-w-[160px]" :style="{ left: contextMenuX + 'px', top: contextMenuY + 'px' }" @click.stop>
+                <button @click="editLangPack" class="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-idea-text hover:bg-slate-100 dark:hover:bg-idea-hover">编辑语言包</button>
+                <button @click="copyFieldName" class="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-idea-text hover:bg-slate-100 dark:hover:bg-idea-hover">复制字段名</button>
+            </div>
+        </transition>
+
+        <!-- 模态框：编辑语言包 -->
+        <transition name="modal">
+            <div v-if="langEditorVisible" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[70] flex items-center justify-center p-4" @click.stop="langEditorVisible = false">
+                <div class="modal-content bg-white dark:bg-idea-panel rounded-xl shadow-2xl p-4 md:p-6 w-full max-w-[450px] border border-transparent dark:border-idea-borderDark" @click.stop>
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-bold text-slate-800 dark:text-idea-text">编辑语言包</h3>
+                        <button @click="langEditorVisible = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-idea-text">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                        </button>
+                    </div>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-500 dark:text-idea-textMuted mb-1">字段显示名</label>
+                            <input v-model="langEditName" class="w-full border border-slate-300 dark:border-idea-border rounded-md px-3 py-2 text-sm bg-white dark:bg-idea-bg text-slate-800 dark:text-idea-text focus:border-indigo-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-500 dark:text-idea-textMuted mb-1">字段描述</label>
+                            <textarea v-model="langEditDoc" rows="3" class="w-full border border-slate-300 dark:border-idea-border rounded-md px-3 py-2 text-sm bg-white dark:bg-idea-bg text-slate-800 dark:text-idea-text focus:border-indigo-500 outline-none resize-none"></textarea>
+                        </div>
+                    </div>
+                    <div class="flex justify-end gap-2 mt-4">
+                        <button @click="langEditorVisible = false" class="px-4 py-2 text-sm text-slate-600 dark:text-idea-text hover:bg-slate-100 dark:hover:bg-idea-hover rounded">取消</button>
+                        <button @click="saveLangPack" class="px-4 py-2 text-sm bg-indigo-600 dark:bg-idea-button text-white rounded hover:bg-indigo-700">保存</button>
+                    </div>
+                </div>
+            </div>
+        </transition>
     </div>
 </template>
 
@@ -834,7 +884,6 @@ class DictManager {
         if (this._loaded) return;
         if (this._loading) return this._loading;
         this._loading = (async () => {
-            const t0 = performance.now();
             try {
                 // 先触发 localforage 初始化，获取数据库信息
                 await localforage.ready();
@@ -858,14 +907,27 @@ class DictManager {
                 }
                 db.close();
             } catch (e) {
-                console.warn('[i18n] 批量读取失败，回退到 iterate', e);
                 await localforage.iterate((value, key) => {
                     this._cache.set(key, value);
                 });
             }
+            // 回收 localStorage 回退写入的数据
+            try {
+                const lsKeys = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                    const k = localStorage.key(i);
+                    if (k && k.startsWith('i18n:')) lsKeys.push(k);
+                }
+                for (const lsKey of lsKeys) {
+                    const realKey = lsKey.slice(5);
+                    if (!this._cache.has(realKey)) {
+                        this._cache.set(realKey, localStorage.getItem(lsKey));
+                    }
+                    localStorage.removeItem(lsKey);
+                }
+            } catch (_) {}
             this._loaded = true;
             this._loading = null;
-            console.log(`[i18n] 内存缓存已加载，${this._cache.size} 条，耗时 ${Math.round(performance.now() - t0)}ms`);
         })();
         return this._loading;
     }
@@ -877,7 +939,13 @@ class DictManager {
         let safeValue = (value === null || value === undefined) ? "" : String(value).trim();
         if (safeValue === "null") safeValue = "";
         this._cache.set(key, safeValue);
-        localforage.setItem(key, safeValue);
+        try {
+            await localforage.ready();
+            await localforage.setItem(key, safeValue);
+        } catch (e) {
+            console.warn('[DictManager] IndexedDB 写入失败，回退到 localStorage:', e);
+            try { localStorage.setItem('i18n:' + key, safeValue); } catch (_) {}
+        }
         return safeValue;
     }
     async exportJSON() {
@@ -891,19 +959,16 @@ class DictManager {
             const dict = JSON.parse(jsonString);
             const entries = Object.entries(dict);
             const total = entries.length;
-            console.log(`[i18n] 开始导入语言包，共 ${total} 条`);
-            const t0 = performance.now();
 
-            // 1. 写入内存缓存（同步，极快）
+            // 1. 写入内存缓存
             for (const [key, value] of entries) {
                 let sv = (value === null || value === undefined) ? "" : String(value).trim();
                 if (sv === "null") sv = "";
                 this._cache.set(key, sv);
             }
             this._loaded = true;
-            console.log(`[i18n] 内存写入完成，${total} 条，耗时 ${Math.round(performance.now() - t0)}ms`);
 
-            // 2. 按前缀分段，每段独立批量写入 IndexedDB
+            // 2. 按前缀分段，各段并行写入 IndexedDB
             const segments = {};
             for (const [k, v] of entries) {
                 const prefix = k.split('.')[0] || 'Other';
@@ -911,9 +976,7 @@ class DictManager {
                 segments[prefix].push([k, v]);
             }
             const segNames = Object.keys(segments);
-            console.log(`[i18n] 分段: ${segNames.map(s => `${s}(${segments[s].length})`).join(', ')}`);
 
-            // 3. 各段并行写入 IndexedDB
             let done = 0;
             await Promise.all(segNames.map(async prefix => {
                 const seg = segments[prefix];
@@ -929,10 +992,8 @@ class DictManager {
                     if (onProgress) onProgress(Math.round(done / total * 100));
                 }
             }));
-            console.log(`[i18n] IndexedDB 持久化完成，总耗时 ${Math.round(performance.now() - t0)}ms`);
             return true;
         } catch (e) {
-            console.error("字典导入失败", e);
             return false;
         }
     }
@@ -955,7 +1016,7 @@ class WeightManager {
     async set(key, value) {
         const num = Number(value);
         await weightStore.setItem(key, isNaN(num) ? 0 : num);
-    }
+    }z
     async exportJSON() {
         const pack = {};
         await weightStore.iterate((value, key) => { pack[key] = value; });
@@ -966,16 +1027,13 @@ class WeightManager {
             const pack = JSON.parse(jsonString);
             const entries = Object.entries(pack);
             const total = entries.length;
-            console.log(`[weight] 开始导入权重包，共 ${total} 条`);
             for (let i = 0; i < total; i++) {
                 const [key, value] = entries[i];
                 await this.set(key, value);
                 if (onProgress) onProgress(Math.round(((i + 1) / total) * 100));
             }
-            console.log(`[weight] 导入完成，共写入 ${total} 条`);
             return true;
         } catch (e) {
-            console.error("权重包导入失败", e);
             return false;
         }
     }
@@ -1078,8 +1136,7 @@ async function buildParentClassMap() {
         for (let i = 0; i < tasks.length; i += 20) {
             await Promise.all(tasks.slice(i, i + 20));
         }
-        console.log(`[i18n] 父类映射表已构建，共 ${Object.keys(parentClassCache).length} 条`);
-    } catch (e) { console.warn('[i18n] 构建父类映射失败', e); }
+    } catch (e) {}
 }
 
 function isSubclassOf(child, parent) {
@@ -1096,18 +1153,15 @@ async function autoRegisterNameFields() {
     try {
         const res = await wsApi.send('AllClass');
         const allClasses = (res.Class_List || []).map(c => typeof c === 'string' ? c : (c.str || String(c)));
-        let count = 0;
         for (const cls of allClasses) {
             if (!isSubclassOf(cls, 'Block')) continue;
             const key = `Field.${cls}.name.name`;
             const existing = await i18n.get(key);
             if (!existing) {
                 await i18n.set(key, cls.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()).trim());
-                count++;
             }
         }
-        console.log(`[i18n] 已为 ${count} 个 Block 子类注册 name 字段`);
-    } catch (e) { console.warn('[i18n] 注册 name 字段失败', e); }
+    } catch (e) {}
 }
 
 const DataProvider = {
@@ -1118,7 +1172,6 @@ const DataProvider = {
         if (!className) return "";
         const dictKey = `Class.${className}.doc`;
         const localDoc = await i18n.get(dictKey);
-        console.log(`[i18n] getClassDoc key="${dictKey}" cached="${localDoc}"`);
         if (localDoc && localDoc !== "null") return localDoc;
         return "";
     },
@@ -1245,14 +1298,74 @@ class StepRecorder {
     clear() { this.steps = []; }
     exportJson() { return JSON.stringify({ version: "1.0", steps: this.steps }, null, 2); }
 
-    async replay(steps, wsApi, onProgress) {
-        const idMap = {}; const pathMap = {}; const classIdToGlobalPath = {};
-        const getRealId = (id) => (idMap[id] !== undefined ? idMap[id] : id);
-        const firstNewClass = steps.find(s => s.type === 'NewClass');
-        if (firstNewClass) classIdToGlobalPath[firstNewClass.classId] = [];
+    // 优化步骤：去重、合并、去除冗余
+    optimizeSteps(steps) {
+        const optimized = [];
+        const classCreations = new Set();
+        const setValues = new Map(); // key: classId:path -> step index
+        const removes = new Map();   // key: classId:path -> step index
 
         for (let i = 0; i < steps.length; i++) {
             const step = steps[i];
+
+            switch (step.type) {
+                case 'NewClass':
+                    // 去重：同一 classId 只创建一次
+                    if (!classCreations.has(step.classId)) {
+                        classCreations.add(step.classId);
+                        optimized.push(step);
+                    }
+                    break;
+
+                case 'SetFieldValue': {
+                    const key = `${step.classId}:${step.path.join('.')}`;
+                    // 如果之前有 RemoveElement 同路径，移除它（设置值会覆盖）
+                    if (removes.has(key)) {
+                        const removeIdx = removes.get(key);
+                        optimized[removeIdx] = null; // 标记为跳过
+                        removes.delete(key);
+                    }
+                    // 如果之前有 SetFieldValue 同路径，覆盖它
+                    if (setValues.has(key)) {
+                        optimized[setValues.get(key)] = null;
+                    }
+                    setValues.set(key, optimized.length);
+                    optimized.push(step);
+                    break;
+                }
+
+                case 'AddElement':
+                    // AddElement 无法去重，直接保留
+                    optimized.push(step);
+                    break;
+
+                case 'RemoveElement': {
+                    const key = `${step.classId}:${step.path.join('.')}`;
+                    // 如果后面有 SetFieldValue 同路径，这个 Remove 是冗余的
+                    // 但此时还不知道后面有没有，先记录
+                    removes.set(key, optimized.length);
+                    optimized.push(step);
+                    break;
+                }
+
+                default:
+                    optimized.push(step);
+            }
+        }
+
+        // 过滤掉被标记为跳过的步骤
+        return optimized.filter(s => s !== null);
+    }
+
+    async replay(steps, wsApi, onProgress) {
+        const optimizedSteps = this.optimizeSteps(steps);
+        const idMap = {}; const pathMap = {}; const classIdToGlobalPath = {};
+        const getRealId = (id) => (idMap[id] !== undefined ? idMap[id] : id);
+        const firstNewClass = optimizedSteps.find(s => s.type === 'NewClass');
+        if (firstNewClass) classIdToGlobalPath[firstNewClass.classId] = [];
+
+        for (let i = 0; i < optimizedSteps.length; i++) {
+            const step = optimizedSteps[i];
             switch (step.type) {
                 case 'NewClass': {
                     const res = await wsApi.send('NewClass', { Class_Name: step.className });
@@ -1291,7 +1404,7 @@ class StepRecorder {
                     break;
                 }
             }
-            if (onProgress) onProgress(Math.round(((i + 1) / steps.length) * 100));
+            if (onProgress) onProgress(Math.round(((i + 1) / optimizedSteps.length) * 100));
         }
         return { idMap, pathMap };
     }
@@ -1323,7 +1436,9 @@ const EditorNode = {
     props: { node: Object, classId: Number },
     emits: ['remove'],
     setup(props, { emit }) {
-        const showToast = inject('showToast'); 
+        const showToast = inject('showToast');
+        const selectedClass = inject('selectedClass');
+        const allFields = inject('allFields'); 
         const saving = ref(false);
         const instanceOptions = ref([]);
         const allTypes = ref([]);
@@ -1345,6 +1460,11 @@ const EditorNode = {
         if (props.node.collapsed === undefined) props.node.collapsed = false;
 
         const canCollapse = computed(() => props.node.isArray || displayMode.value === 'object' || displayMode.value === 'subclass-editing' || (displayMode.value === 'array' && props.node.children.length > 0));
+
+        const isBooleanField = computed(() => {
+            const t = (props.node.fieldType || '').toLowerCase();
+            return t === 'boolean' || t === 'java.lang.boolean';
+        });
 
         const collapseSummary = computed(() => {
             const count = props.node.children.length;
@@ -1443,6 +1563,11 @@ const EditorNode = {
                 stepRecorder.record({ type: 'SetFieldValue', classId: props.classId, path: props.node.path, value: String(props.node.value) });
             } catch (e) { showToast('保存失败: ' + (e.message || e), 'error'); }
             finally { saving.value = false; }
+        };
+
+        const toggleBoolean = async () => {
+            props.node.value = props.node.value === 'true' ? 'false' : 'true';
+            await saveValue();
         };
 
         const createTypeInstance = async () => {
@@ -1561,13 +1686,106 @@ const EditorNode = {
 
         const handleRemove = () => { emit('remove'); };
 
+        // 右键菜单相关
+        const contextMenuVisible = ref(false);
+        const contextMenuX = ref(0);
+        const contextMenuY = ref(0);
+        let longPressTimer = null;
+        let touchStartPos = null;
+
+        const showContextMenu = (e) => {
+            e.preventDefault();
+            contextMenuX.value = e.clientX;
+            contextMenuY.value = e.clientY;
+            contextMenuVisible.value = true;
+        };
+
+        const hideContextMenu = () => { contextMenuVisible.value = false; };
+
+        // 长按支持（移动端）
+        const onTouchStart = (e) => {
+            touchStartPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            longPressTimer = setTimeout(() => {
+                contextMenuX.value = touchStartPos.x;
+                contextMenuY.value = touchStartPos.y;
+                contextMenuVisible.value = true;
+            }, 500);
+        };
+
+        const onTouchEnd = () => {
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+        };
+
+        const onTouchMove = (e) => {
+            if (!touchStartPos) return;
+            const dx = Math.abs(e.touches[0].clientX - touchStartPos.x);
+            const dy = Math.abs(e.touches[0].clientY - touchStartPos.y);
+            if (dx > 10 || dy > 10) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+            }
+        };
+
+        const onTouchCancel = () => {
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+        };
+
+        // 语言包编辑相关
+        const langEditorVisible = ref(false);
+        const langEditName = ref('');
+        const langEditDoc = ref('');
+
+        const editLangPack = async () => {
+            hideContextMenu();
+            const className = selectedClass.value;
+            const fieldName = props.node.key;
+            langEditName.value = (await DataProvider.getDisplayName('Field', className, fieldName)) || fieldName;
+            langEditDoc.value = (await DataProvider.getFieldDoc(className, fieldName)) || '';
+            langEditorVisible.value = true;
+        };
+
+        const saveLangPack = async () => {
+            const className = selectedClass.value;
+            const fieldName = props.node.key;
+            await i18n.set(`Field.${className}.${fieldName}.name`, langEditName.value);
+            await i18n.set(`Field.${className}.${fieldName}.doc`, langEditDoc.value);
+            langEditorVisible.value = false;
+
+            // 刷新字段列表
+            if (allFields && allFields.value) {
+                const field = allFields.value.find(f => f.name === fieldName);
+                if (field) {
+                    field.displayName = langEditName.value;
+                    field.doc = langEditDoc.value || '暂无描述';
+                }
+            }
+
+            showToast('语言包已更新', 'success');
+        };
+
+        const copyFieldName = () => {
+            hideContextMenu();
+            navigator.clipboard.writeText(props.node.key);
+            showToast('已复制字段名', 'success');
+        };
+
+        // 点击外部关闭菜单
+        onMounted(() => {
+            document.addEventListener('click', hideContextMenu);
+        });
+
         return {
             saving, instanceOptions, allTypes, refMode, selectedType,
-            expanding, removing, creatingType, displayMode, canCollapse, collapseSummary,
-            toggleCollapse, saveValue, createTypeInstance, expandObject,
+            expanding, removing, creatingType, displayMode, canCollapse, collapseSummary, isBooleanField,
+            toggleCollapse, saveValue, toggleBoolean, createTypeInstance, expandObject,
             addArrayElement, removeChild, handleRemove, uncreatedFields, resetObjectType, bypassTypeSelect,
             fieldSelectorVisible, fieldSearchQuery, filteredUncreatedFields, selectAndCreateField,
-            typeSelectorVisible, typeSearchQuery, instanceSearchQuery, filteredTypes, filteredInstances, selectTypeAndCreate, selectInstanceAndSave
+            typeSelectorVisible, typeSearchQuery, instanceSearchQuery, filteredTypes, filteredInstances, selectTypeAndCreate, selectInstanceAndSave,
+            contextMenuVisible, contextMenuX, contextMenuY, showContextMenu, hideContextMenu,
+            onTouchStart, onTouchEnd, onTouchMove, onTouchCancel,
+            langEditorVisible, langEditName, langEditDoc, editLangPack, saveLangPack, copyFieldName
         };
     }
 };
@@ -1587,7 +1805,7 @@ const app = createApp({
         }
     },
     setup() {
-        const wsUrl = ref('ws://121.199.60.4:8317'); 
+        const wsUrl = ref('ws://localhost:8317');
         const dataDir = ref('.mindustrymit-data'); 
         
         const connected = ref(false);
@@ -1642,6 +1860,8 @@ const app = createApp({
             setTimeout(() => { toasts.value = toasts.value.filter(t => t.id !== id); }, 3000);
         };
         provide('showToast', showToast);
+        provide('selectedClass', selectedClass);
+        provide('allFields', allFields);
 
         const toggleTheme = () => {
             isDarkMode.value = !isDarkMode.value;
@@ -2013,32 +2233,79 @@ const app = createApp({
                 await wsApi.send('Init', { Data_Dir: dataDir.value });
                 connectProgress.value = { text: '正在加载语言包...', percent: 30 };
 
+                // 统计计数器
+                let langCount = 0, weightCount = 0, customFieldSuccess = 0, customFieldFailed = 0;
+
                 // 自动加载同目录的语言包文件
                 try {
                     const resp = await fetch('MMIT中文语言包.json');
                     if (resp.ok) {
                         await i18n.importJSON(await resp.text());
-                        console.log(`[i18n] 已自动加载同目录语言包，${i18n._cache.size} 条`);
+                        langCount = i18n._cache.size;
                     }
-                } catch (e) { console.log('[i18n] 未找到同目录语言包，跳过'); }
+                } catch (e) {}
 
                 // 自动加载同目录的权重包文件
+                let weightPackData = {};
                 try {
                     const wResp = await fetch('MMIT权重包.json');
                     if (wResp.ok) {
-                        const wText = await wResp.text();
-                        const wImported = await weightMgr.importJSON(wText);
-                        if (wImported) console.log('[weight] 已自动加载同目录权重包');
+                        const wJson = await wResp.text();
+                        weightPackData = JSON.parse(wJson);
+                        await weightMgr.importJSON(wJson);
+                        weightCount = Object.keys(weightPackData).length;
                     }
-                } catch (e) { console.log('[weight] 未找到同目录权重包，跳过'); }
+                } catch (e) {}
 
                 connectProgress.value = { text: '正在构建类继承关系...', percent: 50 };
 
                 await buildParentClassMap();
-                connectProgress.value = { text: '正在注册 name 字段...', percent: 60 };
+                connectProgress.value = { text: '正在注册自定义字段...', percent: 60 };
 
-                // 为所有 Block 子类自动注册 name 字段
-                await autoRegisterNameFields();
+                // 从权重包中提取自定义字段并注册
+                const fieldPattern = /^Field\.([^.]+)\.([^.]+)\.weight$/;
+                const customFieldSet = new Set();
+                for (const key of Object.keys(weightPackData)) {
+                    const match = key.match(fieldPattern);
+                    if (match) {
+                        const [, className, fieldName] = match;
+                        customFieldSet.add(`${className}.${fieldName}`);
+                    }
+                }
+
+                // 批量注册自定义字段并写入语言包
+                for (const entry of customFieldSet) {
+                    const [className, fieldName] = entry.split('.');
+                    try {
+                        await wsApi.send('AddField', {
+                            Class_Name: className,
+                            Field_Name: fieldName,
+                            Field_Type: 'String',
+                            Default_Value: '',
+                            Notes: ''
+                        });
+                        // 写入语言包
+                        const nameKey = `Field.${className}.${fieldName}.name`;
+                        if (!(await i18n.get(nameKey))) {
+                            await i18n.set(nameKey, fieldName.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()).trim());
+                        }
+                        customFieldSuccess++;
+                    } catch (e) { customFieldFailed++; }
+                }
+
+                // 为所有 Block 子类注册 name: String 字段
+                try {
+                    await wsApi.send('AddField', {
+                        Class_Name: 'Block',
+                        Field_Name: 'name',
+                        Field_Type: 'String',
+                        Default_Value: '',
+                        Notes: '',
+                        Apply_To_Subclasses: true
+                    });
+                    customFieldSuccess++;
+                } catch (e) { customFieldFailed++; }
+
                 connectProgress.value = { text: '正在加载类型列表...', percent: 70 };
 
                 const res = await wsApi.send('AllClass');
@@ -2054,6 +2321,8 @@ const app = createApp({
                 classObjs.sort((a, b) => b.weight - a.weight || a.name.localeCompare(b.name));
                 classList.value = classObjs;
                 connectProgress.value = { text: '完成', percent: 100 };
+
+                console.log(`[init] 语言包: ${langCount} 条 | 权重包: ${weightCount} 条 | 自定义字段: 成功 ${customFieldSuccess} 个, 失败 ${customFieldFailed} 个`);
 
                 connected.value = true;
 
