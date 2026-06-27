@@ -34,6 +34,16 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
 
+      - name: Create local.properties
+        run: |
+          cat > local.properties <<EOF
+          sdk.dir=${{ runner.tool_cache }}/Android/Sdk
+          KEYSTORE_PATH=mindustrymit/release.jks
+          KEYSTORE_PASSWORD=mmit1234
+          KEY_ALIAS=mmit
+          KEY_PASSWORD=mmit1234
+          EOF
+
       - name: Resolve next version
         id: ver
         run: |
@@ -60,11 +70,15 @@ jobs:
       - name: Build tool.jar
         run: ./gradlew shadowJar -Pversion=${{ steps.ver.outputs.version }} --no-daemon --stacktrace
 
+      - name: Build release APK
+        run: ./gradlew :mindustrymit:assembleRelease --no-daemon --stacktrace
+
       - name: Stage release artifact
         run: |
           mkdir -p release
           cp build/libs/tool-${{ steps.ver.outputs.version }}.jar "release/tool-${{ steps.ver.outputs.version }}.jar"
           cp src/main/web/index.html "release/web.html"
+          cp mindustrymit/build/outputs/apk/release/*.apk "release/mindustrymit-release.apk"
 
       - name: Create tag and GitHub Release
         uses: softprops/action-gh-release@v2
@@ -75,5 +89,6 @@ jobs:
           files: |
             release/tool-${{ steps.ver.outputs.version }}.jar
             release/web.html
+            release/mindustrymit-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

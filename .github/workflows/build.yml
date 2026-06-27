@@ -26,9 +26,19 @@ jobs:
       - name: Build tool.jar
         run: ./gradlew shadowJar --no-daemon --stacktrace
 
+      - name: Build debug APK
+        run: ./gradlew :mindustrymit:assembleDebug --no-daemon --stacktrace
+
       - name: Upload tool.jar artifact
         uses: actions/upload-artifact@v4
         with:
           name: tool-jar
           path: build/libs/*.jar
+          if-no-files-found: error
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mindustrymit-debug
+          path: mindustrymit/build/outputs/apk/debug/*.apk
           if-no-files-found: error
