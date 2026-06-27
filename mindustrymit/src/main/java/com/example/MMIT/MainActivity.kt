@@ -6,7 +6,7 @@ import android.os.Bundle
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 
 class MainActivity : AppCompatActivity() {
 
@@ -33,14 +33,9 @@ class MainActivity : AppCompatActivity() {
         consoleOutput = findViewById(R.id.consoleOutput)
         consoleScroll = findViewById(R.id.consoleScroll)
 
-        ContextCompat.registerReceiver(
-            this, logReceiver, IntentFilter(ACTION_LOG),
-            ContextCompat.RECEIVER_NOT_EXPORTED
-        )
-        ContextCompat.registerReceiver(
-            this, readyReceiver, IntentFilter(BackendService.ACTION_BACKEND_READY),
-            ContextCompat.RECEIVER_NOT_EXPORTED
-        )
+        val lbm = LocalBroadcastManager.getInstance(this)
+        lbm.registerReceiver(logReceiver, IntentFilter(BackendService.ACTION_LOG))
+        lbm.registerReceiver(readyReceiver, IntentFilter(BackendService.ACTION_BACKEND_READY))
 
         startForegroundService(Intent(this, BackendService::class.java))
     }
@@ -54,11 +49,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        unregisterReceiver(logReceiver)
-        unregisterReceiver(readyReceiver)
-    }
-
-    companion object {
-        const val ACTION_LOG = "com.example.MMIT.LOG"
+        val lbm = LocalBroadcastManager.getInstance(this)
+        lbm.unregisterReceiver(logReceiver)
+        lbm.unregisterReceiver(readyReceiver)
     }
 }

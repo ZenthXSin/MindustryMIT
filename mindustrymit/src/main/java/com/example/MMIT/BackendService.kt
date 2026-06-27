@@ -4,6 +4,7 @@ import android.app.*
 import android.content.Intent
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.mindustry.ide.tool.json.JsonApi
 import fi.iki.elonen.NanoHTTPD
 import kotlin.concurrent.thread
@@ -20,7 +21,8 @@ class BackendService : Service() {
     }
 
     private fun sendLog(msg: String) {
-        sendBroadcast(Intent(MainActivity.ACTION_LOG).putExtra("message", msg))
+        LocalBroadcastManager.getInstance(this)
+            .sendBroadcast(Intent(ACTION_LOG).putExtra("message", msg))
     }
 
     private fun startBackend() {
@@ -52,7 +54,9 @@ class BackendService : Service() {
 
         getSystemService(NotificationManager::class.java)
             .notify(NOTIF_ID, buildNotification("运行中 · HTTP:$HTTP_PORT · WS:$WS_PORT"))
-        sendBroadcast(Intent(ACTION_BACKEND_READY))
+
+        LocalBroadcastManager.getInstance(this)
+            .sendBroadcast(Intent(ACTION_BACKEND_READY))
     }
 
     private fun buildNotification(text: String): Notification {
@@ -76,6 +80,7 @@ class BackendService : Service() {
 
     companion object {
         const val ACTION_BACKEND_READY = "com.example.MMIT.BACKEND_READY"
+        const val ACTION_LOG = "com.example.MMIT.LOG"
         const val WS_PORT = 8317
         const val HTTP_PORT = 8080
         private const val NOTIF_ID = 1

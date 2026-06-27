@@ -58,23 +58,9 @@ dependencies {
     implementation(project(":"))
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.core:core-ktx:1.16.0")
+    implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
     implementation("org.nanohttpd:nanohttpd:2.3.1")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
     testImplementation("junit:junit:4.13.2")
 }
-
-repositories {
-    google()
-    mavenCentral()
-    maven { url = uri("https://jitpack.io") }
-    maven { url = uri("https://raw.githubusercontent.com/Zelaux/MindustryRepo/master/repository") }
-}
-
-dependencies {
-    implementation(project(":"))
-    implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("androidx.core:core-ktx:1.16.0")
-    implementation("org.nanohttpd:nanohttpd:2.3.1")
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
-    testImplementation("junit:junit:4.13.2")
 }
