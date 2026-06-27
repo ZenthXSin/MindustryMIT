@@ -1016,7 +1016,7 @@ class WeightManager {
     async set(key, value) {
         const num = Number(value);
         await weightStore.setItem(key, isNaN(num) ? 0 : num);
-    }z
+    }
     async exportJSON() {
         const pack = {};
         await weightStore.iterate((value, key) => { pack[key] = value; });
@@ -1411,7 +1411,7 @@ class StepRecorder {
 }
 const stepRecorder = new StepRecorder();
 
-const { createApp, ref, computed, onMounted, inject, provide } = Vue;
+const { createApp, ref, computed, onMounted, onUnmounted, inject, provide } = Vue;
 
 // ==========================================
 // Vue 组件：实例树节点 (右侧面板使用)
@@ -1774,6 +1774,9 @@ const EditorNode = {
         // 点击外部关闭菜单
         onMounted(() => {
             document.addEventListener('click', hideContextMenu);
+        });
+        onUnmounted(() => {
+            document.removeEventListener('click', hideContextMenu);
         });
 
         return {

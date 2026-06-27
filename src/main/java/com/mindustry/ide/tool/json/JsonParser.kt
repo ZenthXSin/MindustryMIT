@@ -169,6 +169,9 @@ open class JsonParser : IJsonParser {
             fieldsByName[name] = field
         }
 
+        // 回退：反射字段为空时，从文档字段获取
+        if (fieldsByName.isEmpty()) return allDocFields(className) ?: emptyList()
+
         return fieldsByName.values.toList()
     }
 
