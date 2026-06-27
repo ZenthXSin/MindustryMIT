@@ -3,10 +3,12 @@ package com.example.MMIT
 import android.app.*
 import android.content.Intent
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.mindustry.ide.tool.json.JsonApi
 import fi.iki.elonen.NanoHTTPD
+import java.io.*
 import kotlin.concurrent.thread
 
 class BackendService : Service() {
@@ -21,11 +23,36 @@ class BackendService : Service() {
     }
 
     private fun sendLog(msg: String) {
+        Log.d("MMIT", msg)
         LocalBroadcastManager.getInstance(this)
             .sendBroadcast(Intent(ACTION_LOG).putExtra("message", msg))
     }
 
+    private fun captureStream(inputStream: InputStream, tag: String) {
+        thread(isDaemon = true) {
+            try {
+                BufferedReader(InputStreamReader(inputStream, "UTF-8")).use { reader ->
+                    var line: String?
+                    while (reader.readLine().also { line = it } != null) {
+                        sendLog("[$tag] $line")
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
     private fun startBackend() {
+        // 捕获 stdout/stderr
+        val origOut = System.out
+        val origErr = System.err
+        val outPipe = PipedInputStream()
+        val errPipe = PipedInputStream()
+        System.setOut(PrintStream(PipedOutputStream(outPipe), true, "UTF-8"))
+        System.setErr(PrintStream(PipedOutputStream(errPipe), true, "UTF-8"))
+        captureStream(outPipe, "OUT")
+        captureStream(errPipe, "ERR")
+
+        sendLog("[INIT] MindustryMIT 启动中...")
         sendLog("[INIT] 正在加载 Mindustry 内容...")
         try {
             arc.Core.settings = arc.Settings()
@@ -38,19 +65,25 @@ class BackendService : Service() {
         sendLog("[HTTP] 启动 Web 服务器 -> 0.0.0.0:${HTTP_PORT}")
         httpServer = object : NanoHTTPD(HTTP_PORT) {
             override fun serve(session: IHTTPSession): Response {
+                sendLog("[HTTP] ${session.method} ${session.uri}")
                 val html = assets.open("web.html").bufferedReader().readText()
                 return newFixedLengthResponse(Response.Status.OK, "text/html", html)
             }
         }.also { it.start() }
+        sendLog("[HTTP] Web 服务器已启动")
 
         sendLog("[WS]   启动 WebSocket 服务器 -> 0.0.0.0:${WS_PORT}")
         jsonApi = JsonApi().also {
             it.server.port = WS_PORT
             it.server.start()
         }
+        sendLog("[WS]   WebSocket 服务器已启动")
 
+        sendLog("========================================")
         sendLog("[READY] 服务已就绪")
-        sendLog("[OPEN]  http://127.0.0.1:${HTTP_PORT}")
+        sendLog("[HTTP]  http://127.0.0.1:${HTTP_PORT}")
+        sendLog("[WS]    ws://127.0.0.1:${WS_PORT}")
+        sendLog("========================================")
 
         getSystemService(NotificationManager::class.java)
             .notify(NOTIF_ID, buildNotification("运行中 · HTTP:$HTTP_PORT · WS:$WS_PORT"))

@@ -1749,8 +1749,21 @@ const EditorNode = {
         const saveLangPack = async () => {
             const className = selectedClass.value;
             const fieldName = props.node.key;
-            await i18n.set(`Field.${className}.${fieldName}.name`, langEditName.value);
-            await i18n.set(`Field.${className}.${fieldName}.doc`, langEditDoc.value);
+            const nameKey = `Field.${className}.${fieldName}.name`;
+            const docKey = `Field.${className}.${fieldName}.doc`;
+
+            console.log('[LangPack] 保存:', nameKey, '=', langEditName.value);
+            console.log('[LangPack] 保存:', docKey, '=', langEditDoc.value);
+
+            await i18n.set(nameKey, langEditName.value);
+            await i18n.set(docKey, langEditDoc.value);
+
+            // 验证写入
+            const verifyName = await i18n.get(nameKey);
+            const verifyDoc = await i18n.get(docKey);
+            console.log('[LangPack] 验证读取:', nameKey, '=', verifyName);
+            console.log('[LangPack] 验证读取:', docKey, '=', verifyDoc);
+
             langEditorVisible.value = false;
 
             // 刷新字段列表
@@ -1759,6 +1772,7 @@ const EditorNode = {
                 if (field) {
                     field.displayName = langEditName.value;
                     field.doc = langEditDoc.value || '暂无描述';
+                    console.log('[LangPack] allFields 已刷新:', field);
                 }
             }
 
