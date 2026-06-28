@@ -58,6 +58,8 @@ open class JsonParser : IJsonParser {
     val fieldDocs = mutableMapOf<String, MutableMap<String, FieldMeta>>()
     // 自定义字段（AddField API 添加）
     val customFields = mutableMapOf<String, MutableMap<String, FieldMeta>>()
+    // 自定义类（DefineClass API 添加）
+    val customClasses = mutableMapOf<String, TypeMeta>()
     
     // 类映射（getter 延迟加载；在无 Mindustry 环境下安全返回 null）
     override val classMap: ObjectMap<String?, Class<*>?>?
@@ -85,7 +87,7 @@ open class JsonParser : IJsonParser {
     }
 
     private fun classMeta(className: String): TypeMeta? {
-        return classKeys(className).firstNotNullOfOrNull { classDocs[it] }
+        return classKeys(className).firstNotNullOfOrNull { classDocs[it] ?: customClasses[it] }
     }
 
     private fun fieldMetaInHierarchy(
@@ -164,6 +166,9 @@ open class JsonParser : IJsonParser {
                 fieldsByName[field.name] = FieldMeta(field.name, field.type.canonicalName ?: field.type.name, "", "")
             }
 
+        // 自定义 class 的字段
+        customClasses[fieldKey(className)]?.fields?.forEach { fieldsByName[it.name] = it }
+
         // 自定义字段（AddField API）
         customFields[fieldKey(className)]?.forEach { (name, field) ->
             fieldsByName[name] = field
@@ -173,6 +178,16 @@ open class JsonParser : IJsonParser {
         if (fieldsByName.isEmpty()) return allDocFields(className) ?: emptyList()
 
         return fieldsByName.values.toList()
+    }
+
+    fun defineClass(typeMeta: TypeMeta) {
+        classKeys(typeMeta.type).forEach { key -> customClasses[key] = typeMeta }
+    }
+
+    fun removeCustomClass(className: String): Boolean {
+        val removed = classKeys(className).map { customClasses.remove(it) }.any { it != null }
+        if (removed) classKeys(className).forEach { customFields.remove(it) }
+        return removed
     }
 
     fun addField(className: String, fieldName: String, fieldType: String, defaultValue: String, notes: String, applyToSubclasses: Boolean): List<String> {
@@ -201,12 +216,12 @@ open class JsonParser : IJsonParser {
     // 所有类
     override fun getAllClasses(): List<String> {
         val runtimeClasses = classMap?.mapNotNull { it.key }?.sorted().orEmpty()
-        if (runtimeClasses.isNotEmpty()) return runtimeClasses
+        val custom = customClasses.keys.toList()
+        if (runtimeClasses.isNotEmpty()) return (runtimeClasses + custom).distinct().sorted()
 
-        return classDocs.values
+        return (classDocs.values
             .distinctBy { normalizeClassName(it.type) }
-            .map { normalizeClassName(it.type) }
-            .sorted()
+            .map { normalizeClassName(it.type) } + custom).distinct().sorted()
     }
 
     private fun isSubclassOf(childName: String, parentName: String): Boolean {

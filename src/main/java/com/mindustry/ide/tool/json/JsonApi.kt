@@ -849,6 +849,47 @@ class JsonApi {
                         jsonFormat.encodeToString(WebSocketData.serializer(), reply)
                     }
 
+                    WebSocketDataType.DefineClass -> {
+                        val reply = try {
+                            val className = data.dataList["Class_Name"]?.str ?: fail("Class_Name 不能为空")
+                            val parentType = data.dataList["Parent_Type"]?.str ?: ""
+                            val fieldsJson = data.dataList["Fields"]?.json ?: "[]"
+                            val fields = jsonFormat.decodeFromString(
+                                kotlinx.serialization.builtins.ListSerializer(FieldMeta.serializer()), fieldsJson
+                            )
+                            val typeMeta = TypeMeta(className, parentType, fields)
+                            parser.defineClass(typeMeta)
+                            registerClass(className, arc.util.Nullable::class.java)
+                            WebSocketData.reply(
+                                WebSocketDataType.DefineClass,
+                                mapOf("Success" to Data(boolean = true), "Message" to Data(str = "已定义 $className"))
+                            )
+                        } catch (e: Exception) {
+                            WebSocketData.reply(
+                                WebSocketDataType.DefineClass,
+                                mapOf("Success" to Data(boolean = false), "Message" to Data(str = e.message ?: e::class.java.name))
+                            )
+                        }
+                        jsonFormat.encodeToString(WebSocketData.serializer(), reply)
+                    }
+
+                    WebSocketDataType.RemoveCustomClass -> {
+                        val reply = try {
+                            val className = data.dataList["Class_Name"]?.str ?: fail("Class_Name 不能为空")
+                            val removed = parser.removeCustomClass(className)
+                            WebSocketData.reply(
+                                WebSocketDataType.RemoveCustomClass,
+                                mapOf("Success" to Data(boolean = removed))
+                            )
+                        } catch (e: Exception) {
+                            WebSocketData.reply(
+                                WebSocketDataType.RemoveCustomClass,
+                                mapOf("Success" to Data(boolean = false), "Message" to Data(str = e.message ?: e::class.java.name))
+                            )
+                        }
+                        jsonFormat.encodeToString(WebSocketData.serializer(), reply)
+                    }
+
                 }
             } catch (e: Exception) {
                 errorResponse(e.message ?: e::class.java.name, data.wsType)
@@ -1241,6 +1282,18 @@ enum class WebSocketDataType(
             "Affected_Classes" to DataType.Int,
             "Message" to DataType.String
         )
+    ),
+    DefineClass(
+        listOf(
+            "Class_Name" to DataType.String,
+            "Parent_Type" to DataType.String,
+            "Fields" to DataType.Object
+        ),
+        listOf("Success" to DataType.Boolean, "Message" to DataType.String)
+    ),
+    RemoveCustomClass(
+        listOf("Class_Name" to DataType.String),
+        listOf("Success" to DataType.Boolean, "Message" to DataType.String)
     ),
 }
 
