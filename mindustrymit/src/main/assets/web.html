@@ -264,7 +264,7 @@
         </div>
         <div class="flex-1 flex flex-col overflow-hidden bg-white dark:bg-idea-panel transition-colors" v-if="classId !== null && workspaceMode === 'instance'">
             <div class="p-4 pb-2"><input v-model="searchQuery" placeholder="搜索字段 (如 health)..." class="touch-input w-full border border-slate-300 dark:border-idea-border rounded-md px-3 py-2 text-sm focus:border-indigo-500 dark:focus:border-idea-button outline-none bg-slate-50 dark:bg-idea-bg text-slate-800 dark:text-idea-text placeholder-slate-400 dark:placeholder-idea-textMuted transition-colors"></div>
-            <ul class="flex-1 overflow-y-auto px-2 pb-4 space-y-1 custom-scrollbar">
+            <ul class="flex-1 min-h-0 overflow-y-auto px-2 pb-4 space-y-1 custom-scrollbar">
                 <li v-for="field in filteredFields" :key="field.name">
                     <button @click="addFieldToRoot(field); leftDrawerOpen = false" class="w-full text-left px-3 py-2 rounded-lg text-sm text-slate-600 dark:text-idea-text hover:bg-slate-50 dark:hover:bg-idea-selection hover:text-indigo-600 dark:hover:text-idea-keyword transition-colors flex flex-col group">
                         <div class="flex justify-between items-start w-full min-w-0 gap-2">
@@ -324,7 +324,7 @@
             </div>
             <div class="flex-1 flex flex-col overflow-hidden" v-if="classId !== null && workspaceMode === 'instance'">
                 <div class="p-3"><input v-model="searchQuery" placeholder="搜索字段..." class="w-full border border-slate-300 dark:border-idea-border rounded-md px-3 py-2 text-sm focus:border-indigo-500 outline-none bg-slate-50 dark:bg-idea-bg text-slate-800 dark:text-idea-text transition-colors"></div>
-                <ul class="flex-1 overflow-y-auto px-2 pb-4 space-y-1 custom-scrollbar">
+                <ul class="flex-1 min-h-0 overflow-y-auto px-2 pb-4 space-y-1 custom-scrollbar">
                     <li v-for="field in filteredFields" :key="field.name">
                         <button @click="addFieldToRoot(field)" class="w-full text-left px-3 py-2 rounded-lg text-sm text-slate-600 dark:text-idea-text hover:bg-slate-100 dark:hover:bg-idea-selection hover:text-indigo-600 dark:hover:text-idea-keyword transition-colors flex flex-col group">
                             <div class="flex justify-between items-start w-full min-w-0 gap-2"><span class="font-bold text-slate-700 dark:text-idea-field group-hover:text-indigo-600 dark:group-hover:text-idea-keyword font-mono break-all transition-colors">{{ field.displayName }}</span></div>
@@ -335,7 +335,7 @@
             </div>
         </aside>
 
-        <section class="main-section flex-1 bg-white dark:bg-idea-bg flex flex-col relative overflow-y-auto transition-colors duration-300 custom-scrollbar" :class="{ 'pb-16 md:pb-0': connected && isMobile }">
+        <section class="main-section flex-1 bg-white dark:bg-idea-bg relative overflow-y-auto transition-colors duration-300 custom-scrollbar" :class="{ 'pb-16 md:pb-0': connected && isMobile }">
             <div class="py-4 px-2 md:p-8 max-w-5xl mx-auto w-full">
                 <div v-if="workspaceMode === 'instance'">
                     <div v-if="classId === null" class="text-center text-slate-400 dark:text-idea-textMuted mt-32 transition-colors"><p class="text-lg">请先在左侧选择类型并创建实例</p></div>
