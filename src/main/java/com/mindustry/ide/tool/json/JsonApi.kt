@@ -965,6 +965,39 @@ class JsonApi {
                         jsonFormat.encodeToString(WebSocketData.serializer(), reply)
                     }
 
+                    WebSocketDataType.ImportClass -> {
+                        val reply = try {
+                            val content = data.dataList["Content"]?.str ?: fail("Content 不能为空")
+                            val root = Json.parseToJsonElement(content)
+                            if (root !is kotlinx.serialization.json.JsonObject) fail("Content 必须是 JSON 对象")
+                            val className = root["type"]?.jsonPrimitive?.content ?: fail("JSON 中缺少 type 字段")
+                            val id = newClass(className)
+                            val cb = getClassBuild(id)
+                            for ((key, element) in root) {
+                                if (key == "type") continue
+                                val field = cb.getFieldByName(key) ?: continue
+                                val fb = FieldBuild(field, parser, ownerClassName = cb.name)
+                                applyJsonToFieldBuild(fb, element, field, parser)
+                                cb.addFieldBuild { fb }
+                            }
+                            touch(id)
+                            WebSocketData.reply(WebSocketDataType.ImportClass, mapOf(
+                                "Success" to Data(boolean = true),
+                                "Class_Id" to Data(int = id),
+                                "Class_Name" to Data(str = className),
+                                "Message" to Data()
+                            ))
+                        } catch (e: Exception) {
+                            WebSocketData.reply(WebSocketDataType.ImportClass, mapOf(
+                                "Success" to Data(boolean = false),
+                                "Class_Id" to Data(int = -1),
+                                "Class_Name" to Data(),
+                                "Message" to Data(str = e.message ?: e::class.java.name)
+                            ))
+                        }
+                        jsonFormat.encodeToString(WebSocketData.serializer(), reply)
+                    }
+
                     WebSocketDataType.ImportProject -> {
                         val reply = try {
                             val content = data.dataList["Content"]?.str ?: fail("Content 不能为空")
@@ -1420,6 +1453,10 @@ enum class WebSocketDataType(
     ImportProject(
         listOf("Content" to DataType.String, "Merge" to DataType.Boolean),
         listOf("Success" to DataType.Boolean, "Message" to DataType.String, "Class_List" to DataType.List)
+    ),
+    ImportClass(
+        listOf("Content" to DataType.String),
+        listOf("Success" to DataType.Boolean, "Class_Id" to DataType.Int, "Class_Name" to DataType.String, "Message" to DataType.String)
     ),
 }
 
