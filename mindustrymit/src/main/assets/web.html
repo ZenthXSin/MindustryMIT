@@ -1142,6 +1142,20 @@
                     const blob = new Blob([finalContent], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${selectedClass.value.toLowerCase()}.json`; a.click(); URL.revokeObjectURL(url); exportDialogVisible.value = false; showToast('JSON 导出成功', 'success');
                 } catch (e) { showToast('导出 JSON 失败: ' + e.message, 'error'); }
             };
+            const loadWorkspace = async (cid, cName) => {
+                isLoadingFields.value = true; searchQuery.value = '';
+                try {
+                    const fRes = await wsApi.send('AllField', { Class_Name: cName });
+                    if (fRes.Field_List) {
+                        const fieldsPromises = fRes.Field_List.map(async f => { const fieldName = typeof f === 'string' ? f : (f.str || String(f)); const fieldType = typeof f === 'string' ? 'String' : (f.json || 'String'); const docStr = await DataProvider.getFieldDoc(cName, fieldName); const displayName = await DataProvider.getDisplayName('Field', cName, fieldName); const weight = await weightMgr.getFieldWeight(cName, fieldName); return { name: fieldName, displayName, type: fieldType, doc: docStr === "" ? "暂无描述" : docStr, weight }; });
+                        allFields.value = (await Promise.all(fieldsPromises)).sort((a, b) => b.weight - a.weight || a.name.localeCompare(b.name));
+                    } else allFields.value = [];
+                    const exportRes = await wsApi.send('ExportClass', { Class_Id: cid });
+                    const data = JSON.parse(exportRes.Content); rootNodes.value = [];
+                    for (const [key, value] of Object.entries(data)) { if (key === 'type') continue; const field = allFields.value.find(f => f.name === key); const fieldType = field ? field.type : 'String'; const tInfo = parseTypeInfo(fieldType); const node = buildNodeFromData(key, value, [key], tInfo.baseType, {}); node.fieldType = tInfo.baseType; node.elementType = tInfo.elementType; node.isArray = tInfo.isArray; rootNodes.value.push(node); }
+                } finally { isLoadingFields.value = false; }
+            };
+
             const importClass = async (event) => {
                 const file = event.target.files[0]; if (!file) return;
                 importing.value = true; importProgress.value = 10;
@@ -1155,15 +1169,7 @@
                     const newClassId = res.Class_Id; classId.value = newClassId; selectedClass.value = className;
                     importProgress.value = 60;
                     stepRecorder.clear(); stepRecorder.record({ type: 'NewClass', className, classId: newClassId });
-                    const fRes = await wsApi.send('AllField', { Class_Name: className });
-                    if (fRes.Field_List) {
-                        const fieldsPromises = fRes.Field_List.map(async f => { const fieldName = typeof f === 'string' ? f : (f.str || String(f)); const fieldType = typeof f === 'string' ? 'String' : (f.json || 'String'); const docStr = await DataProvider.getFieldDoc(className, fieldName); const displayName = await DataProvider.getDisplayName('Field', className, fieldName); const weight = await weightMgr.getFieldWeight(className, fieldName); return { name: fieldName, displayName, type: fieldType, doc: docStr === "" ? "暂无描述" : docStr, weight }; });
-                        allFields.value = (await Promise.all(fieldsPromises)).sort((a, b) => b.weight - a.weight || a.name.localeCompare(b.name));
-                    }
-                    importProgress.value = 80;
-                    const exportRes = await wsApi.send('ExportClass', { Class_Id: newClassId });
-                    const data = JSON.parse(exportRes.Content); rootNodes.value = [];
-                    for (const [key, value] of Object.entries(data)) { if (key === 'type') continue; const field = allFields.value.find(f => f.name === key); const fieldType = field ? field.type : 'String'; const tInfo = parseTypeInfo(fieldType); const node = buildNodeFromData(key, value, [key], tInfo.baseType, {}); node.fieldType = tInfo.baseType; node.elementType = tInfo.elementType; node.isArray = tInfo.isArray; rootNodes.value.push(node); }
+                    await loadWorkspace(newClassId, className);
                     importProgress.value = 100;
                     importDialogVisible.value = false; showToast('导入成功！', 'success');
                 } catch (e) { showToast('导入失败: ' + (e.message || e), 'error'); } finally { importing.value = false; event.target.value = ''; }
