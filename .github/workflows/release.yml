@@ -77,7 +77,7 @@ jobs:
         run: |
           mkdir -p release
           cp build/libs/tool-${{ steps.ver.outputs.version }}.jar "release/tool-${{ steps.ver.outputs.version }}.jar"
-          cp src/main/web/index.html "release/web.html"
+          cp mindustrymit/src/main/assets/web.html "release/web.html"
           cp mindustrymit/build/outputs/apk/release/*.apk "release/mindustrymit-release.apk"
 
       - name: Create tag and GitHub Release
