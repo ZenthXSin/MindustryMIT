@@ -484,7 +484,7 @@
                     <h2 class="text-xl md:text-2xl font-bold text-slate-800 dark:text-idea-text mb-2">连接引擎</h2>
                     <p class="text-slate-500 dark:text-idea-textMuted mb-6 text-sm">请确认 WebSocket 地址和数据目录。</p>
                     <div class="space-y-3 mb-6">
-                        <input v-model="wsUrl" class="touch-input w-full text-slate-800 dark:text-idea-string px-4 py-3 rounded-lg text-sm border border-slate-300 dark:border-idea-border bg-white dark:bg-idea-bg focus:border-indigo-500 outline-none transition-colors" placeholder="ws://127.0.0.1:19190">
+                        <input v-model="wsUrl" class="touch-input w-full text-slate-800 dark:text-idea-string px-4 py-3 rounded-lg text-sm border border-slate-300 dark:border-idea-border bg-white dark:bg-idea-bg focus:border-indigo-500 outline-none transition-colors" placeholder="ws://127.0.0.1:8317">
                         <input v-model="dataDir" class="touch-input w-full text-slate-800 dark:text-idea-string px-4 py-3 rounded-lg text-sm border border-slate-300 dark:border-idea-border bg-white dark:bg-idea-bg focus:border-indigo-500 outline-none transition-colors" placeholder="Data_Dir 目录">
                     </div>
                     <button @click="connectAndInit(false)" :disabled="isConnecting" class="touch-btn bg-indigo-600 dark:bg-idea-button hover:bg-indigo-700 text-white px-6 py-3 rounded-lg font-medium shadow-lg active:scale-95 w-full disabled:opacity-50 flex justify-center items-center gap-2">
