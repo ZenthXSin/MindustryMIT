@@ -491,8 +491,8 @@
                     </div>
                 </div>
                 <div class="flex justify-end gap-2 mt-5">
-                    <button @click="extendClassModalOpen = false" class="px-4 py-2 text-sm text-slate-600 dark:text-idea-text hover:bg-slate-100 dark:hover:bg-idea-hover rounded">取消</button>
-                    <button @click="saveAndApplyCustomField" class="px-4 py-2 text-sm bg-indigo-600 dark:bg-idea-button text-white rounded hover:bg-indigo-700">扩展字段</button>
+                    <button @click="extendClassModalOpen = false" :disabled="isSavingField" class="px-4 py-2 text-sm text-slate-600 dark:text-idea-text hover:bg-slate-100 dark:hover:bg-idea-hover rounded disabled:opacity-50">取消</button>
+                    <button @click="saveAndApplyCustomField" :disabled="isSavingField" class="px-4 py-2 text-sm bg-indigo-600 dark:bg-idea-button text-white rounded hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"><svg v-if="isSavingField" class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>{{ isSavingField ? '正在保存...' : '扩展字段' }}</button>
                 </div>
             </div>
         </div>
@@ -520,7 +520,7 @@
     <div class="json-font relative group/node">
         <div class="json-row pr-2">
             <div class="flex items-center justify-center w-4 shrink-0 cursor-pointer select-none text-slate-400 dark:text-idea-textMuted hover:text-indigo-500" @click.stop="toggleCollapse"><svg v-if="canCollapse" :class="['w-3 h-3 transition-transform duration-200', { '-rotate-90': node.collapsed }]" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path></svg></div>
-            <div class="flex items-center shrink-0 cursor-pointer" @click.stop="toggleCollapse" @contextmenu.prevent="showContextMenu" @touchstart.prevent="onTouchStart" @touchend="onTouchEnd" @touchmove="onTouchMove" @touchcancel="onTouchCancel"><span class="json-key">{{ node.key }}</span><span class="json-bracket mx-0.5">:</span></div>
+            <div class="flex items-center shrink-0 cursor-pointer" @click.stop="toggleCollapse" @contextmenu.prevent="showContextMenu" @touchstart="onTouchStart" @touchend="onTouchEnd" @touchmove="onTouchMove" @touchcancel="onTouchCancel"><span class="json-key">{{ node.key }}</span><span class="json-bracket mx-0.5">:</span></div>
             <div class="flex-1 flex items-center min-w-0 ml-1">
                 <template v-if="displayMode === 'leaf-text'">
                     <template v-if="isBooleanField">
@@ -956,7 +956,7 @@
             const schemaFieldEditorOpen = ref(false); const editingSchemaFieldIndex = ref(-1);
             const schemaFieldForm = ref({ name: '', type: 'String', isArray: false, defaultValue: '', notes: '' });
 
-            const extendClassModalOpen = ref(false);
+            const extendClassModalOpen = ref(false); const isSavingField = ref(false);
             const extendFieldForm = ref({ targetClass: 'Block', fieldName: '', type: 'String', isArray: false, defaultValue: '', notes: '', applyToSubclasses: true });
 
             const classSelectorVisible = ref(false); const classSearchQuery = ref('');
@@ -1071,6 +1071,7 @@
             const saveAndApplyCustomField = async () => {
                 const f = extendFieldForm.value; if (!f.targetClass.trim() || !f.fieldName.trim() || !f.type.trim()) { showToast('类名、字段名和类型不能为空', 'error'); return; }
                 let finalType = f.type.trim(); if (f.isArray) finalType += '[]';
+                isSavingField.value = true;
                 try {
                     await wsApi.send('AddField', { Class_Name: f.targetClass.trim(), Field_Name: f.fieldName.trim(), Field_Type: finalType, Default_Value: f.defaultValue.trim(), Notes: f.notes.trim(), Apply_To_Subclasses: f.applyToSubclasses });
                     const fieldId = `ext_${Date.now()}`;
@@ -1078,7 +1079,7 @@
                     const nameKey = `Field.${f.targetClass.trim()}.${f.fieldName.trim()}.name`; if (!(await i18n.get(nameKey))) { await i18n.set(nameKey, f.fieldName.trim().replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()).trim()); }
                     await loadCustomSchemas(); extendClassModalOpen.value = false; showToast(`已成功为 ${f.targetClass} 添加字段 ${f.fieldName}`, 'success');
                     if (workspaceMode.value === 'instance' && classId.value !== null) { await createInstance(); }
-                } catch (e) { showToast('扩展字段失败: ' + (e.message || e), 'error'); }
+                } catch (e) { showToast('扩展字段失败: ' + (e.message || e), 'error'); } finally { isSavingField.value = false; }
             };
 
             const deleteCustomField = async (id) => { if(confirm(`确定删除该扩展字段吗？(删除后需重启后端生效)`)) { await schemaMgr.removeField(id); await loadCustomSchemas(); showToast('已从本地配置中移除', 'success'); } };
@@ -1251,7 +1252,7 @@
                 addSchemaField, editSchemaField, schemaFieldEditorOpen, schemaFieldForm, saveSchemaField, saveAndRegisterSchema, deleteCustomClass, exportSchema, importSchema,
 
                 // Extend Class (AddField)
-                extendClassModalOpen, openExtendClassModal, extendFieldForm, saveAndApplyCustomField, deleteCustomField,
+                extendClassModalOpen, openExtendClassModal, extendFieldForm, saveAndApplyCustomField, deleteCustomField, isSavingField,
 
                 // 全局类型选择器
                 typeSelectorOpen, typeSelectorQuery, filteredTypeSelectorItems, openTypeSelector, closeTypeSelector, handleTypeSelect,
