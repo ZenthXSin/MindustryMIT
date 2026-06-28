@@ -4,6 +4,10 @@ import com.mindustry.ide.tool.json.JsonApi.ToolData.JsonApiWebSocketHandler
 import com.mindustry.ide.tool.json.JsonParser.Companion.jsonFormat
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.put
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -450,6 +454,24 @@ class JsonApi {
             return elements.lastIndex
         }
 
+        private fun materializeField(classId: Int, path: List<String>): Int {
+            touch(classId)
+            val cb = when (val t = resolvePath(classId, path, createMissing = false)) {
+                is PathTarget.FieldTarget -> {
+                    val tv = t.field.value.typeValue
+                    if (tv !is ClassBuild) fail("字段 ${t.field.field.name} 没有内联对象值")
+                    tv
+                }
+                is PathTarget.ElementTarget -> t.build
+            }
+            classBuildMap.entries.firstOrNull { it.value === cb }?.key?.let { return it }
+            val id = nextId.getAndIncrement()
+            classDataMap[id] = Tool(ApiJsonEditorTool(parser))
+            classBuildMap[id] = cb
+            touch(id)
+            return id
+        }
+
         private fun exportClass(classId: Int): String {
             touch(classId)
             return getClassBuild(classId).toJson()
@@ -760,6 +782,25 @@ class JsonApi {
                         jsonFormat.encodeToString(WebSocketData.serializer(), reply)
                     }
 
+                    WebSocketDataType.MaterializeField -> {
+                        val reply = try {
+                            val classId = data.dataList["Class_Id"]?.int ?: fail("Class_Id 不能为空")
+                            val newId = materializeField(classId, parsePath(data))
+                            WebSocketData.reply(WebSocketDataType.MaterializeField, mapOf(
+                                "Success" to Data(boolean = true),
+                                "Class_Id" to Data(int = newId),
+                                "Message" to Data()
+                            ))
+                        } catch (e: Exception) {
+                            WebSocketData.reply(WebSocketDataType.MaterializeField, mapOf(
+                                "Success" to Data(boolean = false),
+                                "Class_Id" to Data(int = -1),
+                                "Message" to Data(str = e.message ?: e::class.java.name)
+                            ))
+                        }
+                        jsonFormat.encodeToString(WebSocketData.serializer(), reply)
+                    }
+
                     WebSocketDataType.NewClass -> {
                         val className = data.dataList["Class_Name"]?.str ?: ""
                         val classId = newClass(className)
@@ -886,6 +927,73 @@ class JsonApi {
                                 WebSocketDataType.RemoveCustomClass,
                                 mapOf("Success" to Data(boolean = false), "Message" to Data(str = e.message ?: e::class.java.name))
                             )
+                        }
+                        jsonFormat.encodeToString(WebSocketData.serializer(), reply)
+                    }
+
+                    WebSocketDataType.GetAllBuilds -> {
+                        val list = classBuildMap.entries.map { (id, cb) -> Data(int = id, str = cb.name) }
+                        jsonFormat.encodeToString(WebSocketData.serializer(), WebSocketData.reply(
+                            WebSocketDataType.GetAllBuilds,
+                            mapOf("Class_List" to Data(list = list.toMutableList()))
+                        ))
+                    }
+
+                    WebSocketDataType.ExportProject -> {
+                        val reply = try {
+                            val content = buildJsonArray {
+                                classBuildMap.entries.forEach { (id, cb) ->
+                                    add(buildJsonObject {
+                                        put("classId", id)
+                                        put("className", cb.name)
+                                        put("content", Json.parseToJsonElement(cb.toJson()))
+                                    })
+                                }
+                            }.toString()
+                            WebSocketData.reply(WebSocketDataType.ExportProject, mapOf(
+                                "Success" to Data(boolean = true),
+                                "Content" to Data(str = content),
+                                "Message" to Data()
+                            ))
+                        } catch (e: Exception) {
+                            WebSocketData.reply(WebSocketDataType.ExportProject, mapOf(
+                                "Success" to Data(boolean = false),
+                                "Content" to Data(),
+                                "Message" to Data(str = e.message ?: e::class.java.name)
+                            ))
+                        }
+                        jsonFormat.encodeToString(WebSocketData.serializer(), reply)
+                    }
+
+                    WebSocketDataType.ImportProject -> {
+                        val reply = try {
+                            val content = data.dataList["Content"]?.str ?: fail("Content 不能为空")
+                            val merge = data.dataList["Merge"]?.boolean ?: false
+                            if (!merge) classBuildMap.keys.toList().forEach { removeClass(it) }
+                            val arr = Json.parseToJsonElement(content).jsonArray
+                            val imported = mutableListOf<Data>()
+                            for (entry in arr) {
+                                val obj = entry.jsonObject
+                                val id = obj["classId"]?.jsonPrimitive?.content?.toIntOrNull() ?: nextId.getAndIncrement()
+                                val root = Json.parseToJsonElement(obj["content"]!!.toString())
+                                if (root !is kotlinx.serialization.json.JsonObject) continue
+                                classDataMap[id] = Tool(ApiJsonEditorTool(parser))
+                                classBuildMap[id] = buildClassBuildFromJson(root, mindustry.world.Block::class.java, parser)
+                                lastAccessMap[id] = System.currentTimeMillis()
+                                if (id >= nextId.get()) nextId.set(id + 1)
+                                imported += Data(int = id, str = classBuildMap[id]!!.name)
+                            }
+                            WebSocketData.reply(WebSocketDataType.ImportProject, mapOf(
+                                "Success" to Data(boolean = true),
+                                "Message" to Data(str = "已导入 ${imported.size} 个实例"),
+                                "Class_List" to Data(list = imported.toMutableList())
+                            ))
+                        } catch (e: Exception) {
+                            WebSocketData.reply(WebSocketDataType.ImportProject, mapOf(
+                                "Success" to Data(boolean = false),
+                                "Message" to Data(str = e.message ?: e::class.java.name),
+                                "Class_List" to Data(list = mutableListOf())
+                            ))
                         }
                         jsonFormat.encodeToString(WebSocketData.serializer(), reply)
                     }
@@ -1294,6 +1402,24 @@ enum class WebSocketDataType(
     RemoveCustomClass(
         listOf("Class_Name" to DataType.String),
         listOf("Success" to DataType.Boolean, "Message" to DataType.String)
+    ),
+    MaterializeField(
+        listOf("Class_Id" to DataType.Int, "Field_Path" to DataType.List),
+        listOf("Success" to DataType.Boolean, "Class_Id" to DataType.Int, "Message" to DataType.String)
+    ),
+    GetAllBuilds(
+        output = listOf("Class_List" to DataType.List)
+    ),
+    ExportProject(
+        output = listOf(
+            "Success" to DataType.Boolean,
+            "Content" to DataType.String,
+            "Message" to DataType.String
+        )
+    ),
+    ImportProject(
+        listOf("Content" to DataType.String, "Merge" to DataType.Boolean),
+        listOf("Success" to DataType.Boolean, "Message" to DataType.String, "Class_List" to DataType.List)
     ),
 }
 

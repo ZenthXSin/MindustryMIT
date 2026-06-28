@@ -440,7 +440,11 @@
         <div v-if="importDialogVisible" class="fixed inset-0 bg-black/50 dark:bg-black/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4 transition-colors">
             <div class="modal-content bg-white dark:bg-idea-panel rounded-xl shadow-2xl p-4 md:p-6 w-full max-w-[600px] max-h-[80vh] flex flex-col border border-transparent dark:border-idea-borderDark transition-colors">
                 <h3 class="text-lg md:text-xl font-bold text-slate-800 dark:text-idea-text mb-4">导入工程</h3>
-                <textarea v-model="importContent" :disabled="importing" placeholder="粘贴工程步骤 JSON..." class="flex-1 border border-slate-300 dark:border-idea-border rounded-lg p-3 text-sm font-mono resize-none min-h-[150px] focus:outline-none focus:border-indigo-500 touch-input bg-white dark:bg-idea-bg text-slate-800 dark:text-idea-string disabled:opacity-50 transition-colors custom-scrollbar"></textarea>
+                <textarea v-model="importContent" :disabled="importing" placeholder="粘贴工程 JSON..." class="flex-1 border border-slate-300 dark:border-idea-border rounded-lg p-3 text-sm font-mono resize-none min-h-[150px] focus:outline-none focus:border-indigo-500 touch-input bg-white dark:bg-idea-bg text-slate-800 dark:text-idea-string disabled:opacity-50 transition-colors custom-scrollbar"></textarea>
+                <div class="flex items-center gap-2 mt-3">
+                    <input type="checkbox" id="importMergeCheck" v-model="importMerge" :disabled="importing" class="rounded">
+                    <label for="importMergeCheck" class="text-sm text-slate-600 dark:text-idea-text select-none cursor-pointer">合并模式（保留现有实例）</label>
+                </div>
                 <div class="flex justify-end gap-3 mt-4">
                     <button @click="importDialogVisible = false" :disabled="importing" class="touch-btn px-4 py-2 rounded text-sm text-slate-600 dark:text-idea-text hover:bg-slate-100 dark:hover:bg-idea-hover transition-colors">取消</button>
                     <button @click="importProject" :disabled="importing" class="touch-btn bg-indigo-600 dark:bg-idea-button hover:bg-indigo-700 text-white px-4 py-2 rounded text-sm font-medium transition-colors">开始导入</button>
@@ -455,8 +459,8 @@
                 <h3 class="text-lg md:text-xl font-bold text-slate-800 dark:text-idea-text mb-4">导出</h3>
                 <div class="space-y-3">
                     <div class="border border-slate-200 dark:border-idea-border rounded-lg p-4 hover:border-indigo-300 cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-idea-hover" @click="exportProject">
-                        <div class="font-medium text-slate-800 dark:text-idea-text flex items-center gap-2">工程记录 (可复原)</div>
-                        <div class="text-sm text-slate-500 mt-1">导出完整的操作步骤，导入后可恢复编辑状态</div>
+                        <div class="font-medium text-slate-800 dark:text-idea-text flex items-center gap-2">工程快照 (可复原)</div>
+                        <div class="text-sm text-slate-500 mt-1">导出完整工程快照，导入后可恢复编辑状态</div>
                     </div>
                     <div class="border border-slate-200 dark:border-idea-border rounded-lg p-4 hover:border-indigo-300 cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-idea-hover" @click="exportJsonFile">
                         <div class="font-medium text-slate-800 dark:text-idea-text flex items-center gap-2">纯 JSON 文件</div>
@@ -1291,126 +1295,6 @@ function parseTypeInfo(typeName) {
     return { isArray: false, elementType: null, baseType: typeName };
 }
 
-class StepRecorder {
-    constructor() { this.steps = []; }
-    record(step) { this.steps.push({ ...step, timestamp: Date.now() }); }
-    getSteps() { return this.steps; }
-    clear() { this.steps = []; }
-    exportJson() { return JSON.stringify({ version: "1.0", steps: this.steps }, null, 2); }
-
-    // 优化步骤：去重、合并、去除冗余
-    optimizeSteps(steps) {
-        const optimized = [];
-        const classCreations = new Set();
-        const setValues = new Map(); // key: classId:path -> step index
-        const removes = new Map();   // key: classId:path -> step index
-
-        for (let i = 0; i < steps.length; i++) {
-            const step = steps[i];
-
-            switch (step.type) {
-                case 'NewClass':
-                    // 去重：同一 classId 只创建一次
-                    if (!classCreations.has(step.classId)) {
-                        classCreations.add(step.classId);
-                        optimized.push(step);
-                    }
-                    break;
-
-                case 'SetFieldValue': {
-                    const key = `${step.classId}:${step.path.join('.')}`;
-                    // 如果之前有 RemoveElement 同路径，移除它（设置值会覆盖）
-                    if (removes.has(key)) {
-                        const removeIdx = removes.get(key);
-                        optimized[removeIdx] = null; // 标记为跳过
-                        removes.delete(key);
-                    }
-                    // 如果之前有 SetFieldValue 同路径，覆盖它
-                    if (setValues.has(key)) {
-                        optimized[setValues.get(key)] = null;
-                    }
-                    setValues.set(key, optimized.length);
-                    optimized.push(step);
-                    break;
-                }
-
-                case 'AddElement':
-                    // AddElement 无法去重，直接保留
-                    optimized.push(step);
-                    break;
-
-                case 'RemoveElement': {
-                    const key = `${step.classId}:${step.path.join('.')}`;
-                    // 如果后面有 SetFieldValue 同路径，这个 Remove 是冗余的
-                    // 但此时还不知道后面有没有，先记录
-                    removes.set(key, optimized.length);
-                    optimized.push(step);
-                    break;
-                }
-
-                default:
-                    optimized.push(step);
-            }
-        }
-
-        // 过滤掉被标记为跳过的步骤
-        return optimized.filter(s => s !== null);
-    }
-
-    async replay(steps, wsApi, onProgress) {
-        const optimizedSteps = this.optimizeSteps(steps);
-        const idMap = {}; const pathMap = {}; const classIdToGlobalPath = {};
-        const getRealId = (id) => (idMap[id] !== undefined ? idMap[id] : id);
-        const firstNewClass = optimizedSteps.find(s => s.type === 'NewClass');
-        if (firstNewClass) classIdToGlobalPath[firstNewClass.classId] = [];
-
-        for (let i = 0; i < optimizedSteps.length; i++) {
-            const step = optimizedSteps[i];
-            switch (step.type) {
-                case 'NewClass': {
-                    const res = await wsApi.send('NewClass', { Class_Name: step.className });
-                    let newId = res.Class_Id;
-                    if (typeof newId === 'object' && newId !== null) newId = Object.values(newId)[0];
-                    idMap[step.classId] = newId;
-                    break;
-                }
-                case 'SetFieldValue': {
-                    const classId = getRealId(step.classId);
-                    const path = step.path.map(p => getRealId(p));
-                    if (step.valueClassId !== undefined && step.valueClassId !== null) {
-                        const realValId = getRealId(step.valueClassId);
-                        await wsApi.send('SetFieldValue', { Class_Id: classId, Field_Path: path, Value_Class_Id: realValId });
-                        const parentPath = classIdToGlobalPath[step.classId] || [];
-                        const currentPath = [...parentPath, ...step.path];
-                        classIdToGlobalPath[step.valueClassId] = currentPath;
-                        pathMap[currentPath.join('.')] = realValId;
-                    } else {
-                        await wsApi.send('SetFieldValue', { Class_Id: classId, Field_Path: path, Value: step.value });
-                    }
-                    break;
-                }
-                case 'AddElement': {
-                    const classId = getRealId(step.classId);
-                    const path = step.path.map(p => getRealId(p));
-                    await wsApi.send('AddElement', { Class_Id: classId, Field_Path: path, Element_Type: step.elementType || '', Value: step.value || '' });
-                    break;
-                }
-                case 'RemoveElement': {
-                    const classId = getRealId(step.classId);
-                    const path = step.path.map(p => getRealId(p));
-                    const payload = { Class_Id: classId, Field_Path: path };
-                    if (step.index !== undefined) payload.Index = step.index;
-                    await wsApi.send('RemoveElement', payload);
-                    break;
-                }
-            }
-            if (onProgress) onProgress(Math.round(((i + 1) / optimizedSteps.length) * 100));
-        }
-        return { idMap, pathMap };
-    }
-}
-const stepRecorder = new StepRecorder();
-
 const { createApp, ref, computed, onMounted, onUnmounted, inject, provide } = Vue;
 
 // ==========================================
@@ -1560,7 +1444,6 @@ const EditorNode = {
             saving.value = true;
             try {
                 await wsApi.send('SetFieldValue', { Class_Id: props.classId, Field_Path: props.node.path, Value: String(props.node.value) });
-                stepRecorder.record({ type: 'SetFieldValue', classId: props.classId, path: props.node.path, value: String(props.node.value) });
             } catch (e) { showToast('保存失败: ' + (e.message || e), 'error'); }
             finally { saving.value = false; }
         };
@@ -1578,9 +1461,6 @@ const EditorNode = {
                 let subId = res.Class_Id;
                 if (typeof subId === 'object' && subId !== null) subId = Object.values(subId)[0];
                 await wsApi.send('SetFieldValue', { Class_Id: props.classId, Field_Path: props.node.path, Value_Class_Id: subId });
-                stepRecorder.record({ type: 'NewClass', className: selectedType.value, classId: subId });
-                stepRecorder.record({ type: 'SetFieldValue', classId: props.classId, path: props.node.path, valueClassId: subId });
-
                 props.node.subclassType = selectedType.value;
                 props.node.subclassId = subId;
                 props.node.value = '';
@@ -1643,7 +1523,7 @@ const EditorNode = {
                     const vals = Object.values(idx || {});
                     idx = vals.length > 0 ? vals[0] : 0;
                 }
-                stepRecorder.record({ type: 'AddElement', classId: props.classId, path: props.node.path, elementType: props.node.elementType || '', value: '' });
+                }
 
                 props.node.children.push({
                     id: Date.now() + Math.random(), key: `${idx}`, path: [...props.node.path, `#${idx}`],
@@ -1674,10 +1554,8 @@ const EditorNode = {
                     const arrayPath = path.slice(0, -1);
                     const idx = parseInt(lastSegment.slice(1));
                     await wsApi.send('RemoveElement', { Class_Id: props.classId, Field_Path: arrayPath, Index: idx });
-                    stepRecorder.record({ type: 'RemoveElement', classId: props.classId, path: arrayPath, index: idx });
                 } else {
                     await wsApi.send('RemoveElement', { Class_Id: props.classId, Field_Path: path });
-                    stepRecorder.record({ type: 'RemoveElement', classId: props.classId, path: path });
                 }
                 props.node.children.splice(index, 1);
             } catch (e) { showToast('删除失败: ' + (e.message || e), 'error'); }
@@ -1831,7 +1709,8 @@ const app = createApp({
         const exportDialogVisible = ref(false);
         const importContent = ref('');
         const importing = ref(false);
-        const importProgress = ref(0); 
+        const importProgress = ref(0);
+        const importMerge = ref(false);
 
         const isGeneratingDict = ref(false);
         const dictProgress = ref(0);
@@ -2347,9 +2226,6 @@ const app = createApp({
                 if (typeof cid === 'object' && cid !== null) cid = Object.values(cid)[0];
                 classId.value = cid;
 
-                stepRecorder.clear();
-                stepRecorder.record({ type: 'NewClass', className: selectedClass.value, classId: cid });
-
                 const fRes = await wsApi.send('AllField', { Class_Name: selectedClass.value });
                 if (fRes.Field_List) {
                     const fieldsPromises = fRes.Field_List.map(async f => {
@@ -2389,7 +2265,6 @@ const app = createApp({
             try {
                 if (node.subclassId !== null && node.subclassId !== undefined) await wsApi.send('RemoveClass', { Class_Id: node.subclassId });
                 await wsApi.send('RemoveElement', { Class_Id: classId.value, Field_Path: node.path });
-                stepRecorder.record({ type: 'RemoveElement', classId: classId.value, path: node.path });
                 rootNodes.value.splice(index, 1);
             } catch (e) { showToast('删除失败: ' + (e.message || e), 'error'); }
         };
@@ -2397,15 +2272,18 @@ const app = createApp({
         const showImportDialog = () => { importDialogVisible.value = true; importContent.value = ''; importProgress.value = 0; };
         const showExportDialog = () => { exportDialogVisible.value = true; };
 
-        const exportProject = () => {
-            const json = stepRecorder.exportJson();
-            const blob = new Blob([json], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url; a.download = `mindustry-project-${Date.now()}.json`; a.click();
-            URL.revokeObjectURL(url);
-            exportDialogVisible.value = false;
-            showToast('项目导出成功', 'success');
+        const exportProject = async () => {
+            try {
+                const res = await wsApi.send('ExportProject');
+                if (!res.Success) { showToast('导出失败: ' + res.Message, 'error'); return; }
+                const blob = new Blob([res.Content], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = `mindustry-project-${Date.now()}.json`; a.click();
+                URL.revokeObjectURL(url);
+                exportDialogVisible.value = false;
+                showToast('项目导出成功', 'success');
+            } catch (e) { showToast('导出失败: ' + (e.message || e), 'error'); }
         };
 
         const exportJsonFile = async () => {
@@ -2430,54 +2308,97 @@ const app = createApp({
             }
         };
 
+        const buildNodesFromJson = async (jsonObj, ownerClassId, parentPath, fieldsList) => {
+            const nodes = [];
+            for (const [key, value] of Object.entries(jsonObj)) {
+                if (key === 'type') continue;
+                const field = fieldsList.find(f => f.name === key);
+                const fieldType = field ? field.type : 'String';
+                const tInfo = parseTypeInfo(fieldType);
+                const path = [...parentPath, key];
+                if (Array.isArray(value)) {
+                    const children = [];
+                    for (let i = 0; i < value.length; i++) {
+                        const item = value[i];
+                        const childPath = [...path, `#${i}`];
+                        if (typeof item === 'object' && item !== null) {
+                            const mRes = await wsApi.send('MaterializeField', { Class_Id: ownerClassId, Field_Path: childPath });
+                            const matId = mRes.Success ? (mRes.Class_Id?.int ?? mRes.Class_Id) : null;
+                            children.push({
+                                id: Date.now() + Math.random(), key: String(i), path: childPath,
+                                fieldType: tInfo.elementType || 'String', elementType: null, isArray: false,
+                                value: '', children: [], expanded: false, collapsed: false,
+                                subclassType: item.type || tInfo.elementType, subclassId: matId
+                            });
+                        } else {
+                            children.push({
+                                id: Date.now() + Math.random(), key: String(i), path: childPath,
+                                fieldType: tInfo.elementType || 'String', elementType: null, isArray: false,
+                                value: String(item ?? ''), children: [], expanded: false, collapsed: false,
+                                subclassType: null, subclassId: null
+                            });
+                        }
+                    }
+                    nodes.push({
+                        id: Date.now() + Math.random(), key, path,
+                        fieldType: tInfo.baseType, elementType: tInfo.elementType, isArray: true,
+                        value: '', children, expanded: false, collapsed: false, subclassType: null, subclassId: null
+                    });
+                } else if (typeof value === 'object' && value !== null) {
+                    const mRes = await wsApi.send('MaterializeField', { Class_Id: ownerClassId, Field_Path: path });
+                    const matId = mRes.Success ? (mRes.Class_Id?.int ?? mRes.Class_Id) : null;
+                    nodes.push({
+                        id: Date.now() + Math.random(), key, path,
+                        fieldType: tInfo.baseType, elementType: tInfo.elementType, isArray: false,
+                        value: '', children: [], expanded: false, collapsed: false,
+                        subclassType: value.type || tInfo.baseType, subclassId: matId
+                    });
+                } else {
+                    nodes.push({
+                        id: Date.now() + Math.random(), key, path,
+                        fieldType: tInfo.baseType, elementType: tInfo.elementType, isArray: tInfo.isArray,
+                        value: String(value ?? ''), children: [], expanded: false, collapsed: false,
+                        subclassType: null, subclassId: null
+                    });
+                }
+            }
+            return nodes;
+        };
+
         const importProject = async () => {
             if (!importContent.value.trim()) { showToast('请输入项目 JSON', 'error'); return; }
-            importing.value = true; importProgress.value = 0;
+            importing.value = true;
             try {
-                const project = JSON.parse(importContent.value);
-                if (!project.steps || !Array.isArray(project.steps)) { showToast('无效的项目格式：缺少 steps 数组', 'error'); return; }
+                const res = await wsApi.send('ImportProject', { Content: importContent.value.trim(), Merge: importMerge.value });
+                if (!res.Success) { showToast('导入失败: ' + res.Message, 'error'); return; }
 
-                if (classId.value !== null && classId.value !== undefined) await wsApi.send('RemoveClass', { Class_Id: classId.value });
-                stepRecorder.clear();
+                const builds = (res.Class_List || []);
+                if (builds.length === 0) { showToast('导入完成但没有找到实例', 'error'); return; }
 
-                const { idMap, pathMap } = await stepRecorder.replay(project.steps, wsApi, (prog) => { importProgress.value = prog; });
+                const first = builds[0];
+                classId.value = first.int;
+                selectedClass.value = first.str;
 
-                const newClassId = Object.values(idMap)[0];
-                if (newClassId !== undefined && newClassId !== null) {
-                    classId.value = newClassId;
-                    const firstStep = project.steps.find(s => s.type === 'NewClass');
-                    if (firstStep) selectedClass.value = firstStep.className;
-
-                    const fRes = await wsApi.send('AllField', { Class_Name: selectedClass.value });
-                    if (fRes.Field_List) {
-                        const fieldsPromises = fRes.Field_List.map(async f => {
-                            const fieldName = typeof f === 'string' ? f : (f.str || String(f));
-                            const fieldType = typeof f === 'string' ? 'String' : (f.json || 'String');
-
-                            const docStr = await DataProvider.getFieldDoc(selectedClass.value, fieldName);
-                            const displayName = await DataProvider.getDisplayName('Field', selectedClass.value, fieldName);
-                            const weight = await weightMgr.getFieldWeight(selectedClass.value, fieldName);
-
-                            const displayDoc = docStr === "" ? "暂无描述" : docStr;
-                            return { name: fieldName, displayName: displayName, type: fieldType, doc: displayDoc, weight };
-                        });
-                        allFields.value = (await Promise.all(fieldsPromises)).sort((a, b) => b.weight - a.weight || a.name.localeCompare(b.name));
-                    }
-
-                    const res = await wsApi.send('ExportClass', { Class_Id: newClassId });
-                    const data = JSON.parse(res.Content);
-
-                    rootNodes.value = [];
-                    for (const [key, value] of Object.entries(data)) {
-                        if (key === 'type') continue;
-                        const field = allFields.value.find(f => f.name === key);
-                        const fieldType = field ? field.type : 'String';
-                        const tInfo = parseTypeInfo(fieldType);
-                        const node = buildNodeFromData(key, value, [key], tInfo.baseType, pathMap);
-                        node.fieldType = tInfo.baseType; node.elementType = tInfo.elementType; node.isArray = tInfo.isArray;
-                        rootNodes.value.push(node);
-                    }
+                const fRes = await wsApi.send('AllField', { Class_Name: selectedClass.value });
+                if (fRes.Field_List) {
+                    const fieldsPromises = fRes.Field_List.map(async f => {
+                        const fieldName = typeof f === 'string' ? f : (f.str || String(f));
+                        const fieldType = typeof f === 'string' ? 'String' : (f.json || 'String');
+                        const docStr = await DataProvider.getFieldDoc(selectedClass.value, fieldName);
+                        const displayName = await DataProvider.getDisplayName('Field', selectedClass.value, fieldName);
+                        const weight = await weightMgr.getFieldWeight(selectedClass.value, fieldName);
+                        return { name: fieldName, displayName, type: fieldType, doc: docStr === "" ? "暂无描述" : docStr, weight };
+                    });
+                    allFields.value = (await Promise.all(fieldsPromises)).sort((a, b) => b.weight - a.weight || a.name.localeCompare(b.name));
                 }
+
+                const exportRes = await wsApi.send('ExportClass', { Class_Id: classId.value });
+                const data = JSON.parse(exportRes.Content);
+                searchQuery.value = '';
+                rootNodes.value = (typeof data === 'object' && data !== null && !Array.isArray(data))
+                    ? await buildNodesFromJson(data, classId.value, [], allFields.value)
+                    : [];
+
                 importDialogVisible.value = false;
                 showToast('项目导入成功！', 'success');
             } catch (e) { showToast('导入失败: ' + (e.message || e), 'error'); }

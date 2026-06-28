@@ -149,6 +149,41 @@ private fun primitiveJsonFor(type: Class<*>, rawValue: String): JsonElement {
     }
 }
 
+fun buildClassBuildFromJson(obj: JsonObject, defaultType: Class<*>, parser: IJsonParser): ClassBuild {
+    val typeName = (obj["type"] as? JsonPrimitive)?.contentOrNull
+    val cls = typeName?.let { parser.getClassByName(it) } ?: defaultType
+    val cb = ClassBuild(cls, parser)
+    for ((key, element) in obj) {
+        if (key == "type") continue
+        val field = cb.getFieldByName(key) ?: continue
+        val fb = FieldBuild(field, parser, ownerClassName = cb.name)
+        applyJsonToFieldBuild(fb, element, field, parser)
+        cb.addFieldBuild { fb }
+    }
+    return cb
+}
+
+fun applyJsonToFieldBuild(fb: FieldBuild, element: JsonElement, field: Field, parser: IJsonParser) {
+    when (element) {
+        is JsonPrimitive -> { fb.value.value = element.contentOrNull ?: ""; fb.value.elements = null }
+        is JsonObject -> {
+            fb.value.value = ""; fb.value.elements = null
+            fb.value.typeValue = buildClassBuildFromJson(element, field.type, parser)
+        }
+        is JsonArray -> {
+            val elemType = field.getSeqElementType() ?: Any::class.java
+            fb.value.value = ""
+            fb.value.elements = element.mapNotNullTo(mutableListOf()) { item ->
+                when (item) {
+                    is JsonObject -> buildClassBuildFromJson(item, elemType, parser)
+                    is JsonPrimitive -> ClassBuild(elemType, parser).also { it.value = item.contentOrNull ?: "" }
+                    else -> null
+                }
+            }
+        }
+    }
+}
+
 class JsonWorkFile(
     name: String,
     val parser: IJsonParser
@@ -174,53 +209,7 @@ class JsonWorkFile(
         if (root !is JsonObject) {
             throw IllegalArgumentException("import: 根元素必须是 JSON 对象")
         }
-        classBuild = buildClassBuildFromJson(root, defaultType = Block::class.java)
-    }
-
-    private fun buildClassBuildFromJson(obj: JsonObject, defaultType: Class<*>): ClassBuild {
-        val typeName = (obj["type"] as? JsonPrimitive)?.contentOrNull
-        val cls = typeName?.let { parser.getClassByName(it) } ?: defaultType
-        val cb = ClassBuild(cls, parser)
-        for ((key, element) in obj) {
-            if (key == "type") continue
-            val field = cb.getFieldByName(key) ?: continue
-            val fb = FieldBuild(field, parser, ownerClassName = cb.name)
-            applyJsonToFieldBuild(fb, element, field)
-            cb.addFieldBuild { fb }
-        }
-        return cb
-    }
-
-    private fun applyJsonToFieldBuild(fb: FieldBuild, element: JsonElement, field: Field) {
-        when (element) {
-            is JsonPrimitive -> {
-                fb.value.value = element.contentOrNull ?: ""
-                fb.value.elements = null
-            }
-            is JsonObject -> {
-                val nested = buildClassBuildFromJson(element, defaultType = field.type)
-                fb.value.value = ""
-                fb.value.typeValue = nested
-                fb.value.elements = null
-            }
-            is JsonArray -> {
-                val elemType = field.getSeqElementType() ?: Any::class.java
-                val list = mutableListOf<ClassBuild>()
-                for (item in element) {
-                    when (item) {
-                        is JsonObject -> list.add(buildClassBuildFromJson(item, defaultType = elemType))
-                        is JsonPrimitive -> {
-                            val leaf = ClassBuild(elemType, parser)
-                            leaf.value = item.contentOrNull ?: ""
-                            list.add(leaf)
-                        }
-                        else -> { /* 嵌套数组暂不支持 */ }
-                    }
-                }
-                fb.value.value = ""
-                fb.value.elements = list
-            }
-        }
+        classBuild = buildClassBuildFromJson(root, defaultType = Block::class.java, parser = parser)
     }
 
     override fun export(): String = getContent()
@@ -293,7 +282,8 @@ class ClassBuild(
     fun toJsonElement(): JsonElement {
         if (fieldBuilds.isEmpty()) {
             val primitive = primitiveJsonFor(classData, value)
-            return if (primitive == JsonNull) JsonPrimitive(classData.simpleName) else primitive
+            if (primitive != JsonNull) return primitive
+            return buildJsonObject { put("type", name) }
         }
 
         return buildJsonObject {
