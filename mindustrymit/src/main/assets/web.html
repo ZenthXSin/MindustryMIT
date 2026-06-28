@@ -1152,7 +1152,7 @@
                     } else allFields.value = [];
                     const exportRes = await wsApi.send('ExportClass', { Class_Id: cid });
                     const data = JSON.parse(exportRes.Content); rootNodes.value = [];
-                    for (const [key, value] of Object.entries(data)) { if (key === 'type') continue; const field = allFields.value.find(f => f.name === key); const fieldType = field ? field.type : 'String'; const tInfo = parseTypeInfo(fieldType); const node = buildNodeFromData(key, value, [key], tInfo.baseType, {}); node.fieldType = tInfo.baseType; node.elementType = tInfo.elementType; node.isArray = tInfo.isArray; rootNodes.value.push(node); }
+                    for (const [key, value] of Object.entries(data)) { if (key === 'type') continue; const field = allFields.value.find(f => f.name === key); const fieldType = field ? field.type : 'String'; const tInfo = parseTypeInfo(fieldType); const node = buildNodeFromData(key, value, [key], tInfo.baseType, {}); node.fieldType = tInfo.baseType; const isShorthandArray = Array.isArray(value) && value.length > 0 && value.every(v => typeof v === 'string'); node.elementType = isShorthandArray ? 'String' : tInfo.elementType; node.isArray = tInfo.isArray; rootNodes.value.push(node); }
                 } finally { isLoadingFields.value = false; }
             };
 
