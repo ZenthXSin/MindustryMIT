@@ -28,22 +28,36 @@
         .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #555555; }
         .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #777777; }
         .dark .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .modal-enter-active, .modal-leave-active { transition: all 0.25s cubic-bezier(0.25, 0.8, 0.25, 1); }
-        .modal-enter-from, .modal-leave-to { opacity: 0; }
-        .modal-enter-from .modal-content, .modal-leave-to .modal-content { transform: scale(0.95) translateY(10px); }
-        .modal-content { transition: all 0.25s cubic-bezier(0.25, 0.8, 0.25, 1); }
+        
+        /* 淡入淡出动画 (用于遮罩) */
         .fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
         .fade-enter-from, .fade-leave-to { opacity: 0; }
+
+        /* 弹窗中心缩放动画 (用于小对话框) */
+        .modal-enter-active, .modal-leave-active { transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1); }
+        .modal-enter-from, .modal-leave-to { opacity: 0; }
+        .modal-enter-from .modal-content, .modal-leave-to .modal-content { transform: scale(0.95) translateY(10px); opacity: 0; }
+        .modal-content { transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1); will-change: transform, opacity; }
+
+        /* 滑出面板动画 (用于控制中心、Schema 等大型面板的容器) */
+        .slide-up-enter-active, .slide-up-leave-active { transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1); will-change: transform; }
+        .slide-up-enter-from, .slide-up-leave-to { transform: translateY(100%); }
+        
         .toast-enter-active, .toast-leave-active { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
         .toast-enter-from, .toast-leave-to { opacity: 0; transform: translateX(100%); }
         @keyframes spin { to { transform: rotate(360deg); } } .animate-spin { animation: spin 1s linear infinite; }
+        
+        /* 移动端导航指示器 */
         .mobile-nav-item { position: relative; }
         .mobile-nav-item.active::after { content: ''; position: absolute; bottom: 0; left: 20%; right: 20%; height: 3px; background: #6366f1; border-radius: 2px 2px 0 0; }
         .dark .mobile-nav-item.active::after { background: #569cd6; }
+        
+        /* 侧边抽屉与遮罩 */
         .drawer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 40; opacity: 0; visibility: hidden; transition: opacity 0.3s ease, visibility 0.3s ease; }
         .dark .drawer-overlay { background: rgba(0,0,0,0.7); } .drawer-overlay.open { opacity: 1; visibility: visible; }
-        .drawer-panel { position: fixed; top: 0; bottom: 0; width: 85%; max-width: 320px; background: white; z-index: 45; transform: translateX(-100%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 4px 0 20px rgba(0,0,0,0.15); display: flex; flex-direction: column; }
+        .drawer-panel { position: fixed; top: 0; bottom: 0; width: 85%; max-width: 320px; background: white; z-index: 45; transform: translateX(-100%); transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1); box-shadow: 4px 0 20px rgba(0,0,0,0.15); display: flex; flex-direction: column; will-change: transform; }
         .dark .drawer-panel { background: #252526; box-shadow: 4px 0 20px rgba(0,0,0,0.5); } .drawer-panel.open { transform: translateX(0); }
+        
         .touch-btn { min-height: 44px; min-width: 44px; } .touch-input { min-height: 44px; font-size: 16px; }
         .json-font { font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace; font-size: 13.5px; line-height: 1.6; }
         .json-row { display: flex; align-items: flex-start; border-radius: 4px; margin: 1px 0; transition: background-color 0.15s; }
@@ -59,9 +73,48 @@
         .json-actions { opacity: 0; transition: opacity 0.2s; } .json-row:hover .json-actions { opacity: 1; }
         .grid-collapse { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.25s cubic-bezier(0.4, 0, 0.2, 1); } .grid-collapse.is-open { grid-template-rows: 1fr; } .grid-collapse-inner { min-height: 0; overflow: hidden; }
         .node-move, .node-enter-active, .node-leave-active { transition: all 0.25s ease; } .node-enter-from, .node-leave-to { opacity: 0; transform: translateX(-10px); } .node-leave-active { position: absolute; width: 100%; z-index: 0; }
-        @media (max-width: 768px) { .desktop-only { display: none !important; } .main-section { width: 100% !important; max-width: none !important; } .preview-panel { position: fixed; bottom: calc(3.5rem + env(safe-area-inset-bottom)); left: 0; right: 0; height: 60vh; z-index: 40 !important; transform: translateY(120%); transition: transform 0.35s cubic-bezier(0.25, 0.8, 0.25, 1); border-radius: 16px 16px 0 0; } .preview-panel.open { transform: translateY(0); box-shadow: 0 -10px 40px rgba(0,0,0,0.3); } .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0); } .json-actions { opacity: 0.5; } }
-        @media (min-width: 769px) { .mobile-only { display: none !important; } .preview-panel { position: relative; transform: none !important; border-radius: 0; z-index: 10; } }
-        @media (max-width: 640px) { .modal-content { width: 95% !important; max-height: 85vh !important; margin: 0 10px; } .json-font { font-size: 12.5px; } }
+        
+        /* 移动端避让导航栏设计与桌面端缩放覆盖 */
+        @media (max-width: 768px) { 
+            .desktop-only { display: none !important; } 
+            .main-section { width: 100% !important; max-width: none !important; } 
+            
+            /* 让所有移动端弹出层底部停靠在导航栏上方 */
+            .mobile-dialog-container, .drawer-overlay {
+                bottom: calc(3.5rem + env(safe-area-inset-bottom)) !important;
+            }
+            .drawer-panel {
+                bottom: calc(3.5rem + env(safe-area-inset-bottom)) !important;
+            }
+
+            .preview-panel { 
+                position: fixed; 
+                bottom: calc(3.5rem + env(safe-area-inset-bottom)); 
+                left: 0; 
+                right: 0; 
+                height: 60vh; 
+                z-index: 55 !important; 
+                transform: translateY(100%); 
+                transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1); 
+                border-radius: 16px 16px 0 0; 
+                will-change: transform;
+            } 
+            .preview-panel.open { 
+                transform: translateY(0); 
+                box-shadow: 0 -10px 40px rgba(0,0,0,0.3); 
+            } 
+            .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0); } 
+            .json-actions { opacity: 0.5; } 
+        }
+        @media (min-width: 769px) { 
+            .mobile-only { display: none !important; } 
+            .preview-panel { position: relative; transform: none !important; border-radius: 0; z-index: 10; }
+            
+            /* 桌面端控制中心和Schema维持居中缩放效果 */
+            .slide-up-enter-active, .slide-up-leave-active { transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s ease; }
+            .slide-up-enter-from, .slide-up-leave-to { transform: scale(0.95) translateY(20px); opacity: 0; }
+        }
+        @media (max-width: 640px) { .modal-content, .slide-panel { width: 100% !important; margin: 0; } .modal-content { width: 95% !important; margin: 0 10px; } .json-font { font-size: 12.5px; } }
     </style>
 </head>
 <body class="bg-white text-slate-800 dark:bg-idea-bg dark:text-idea-text transition-colors duration-300">
@@ -80,16 +133,16 @@
     <!-- 顶部导航栏 -->
     <header class="bg-slate-900 text-white dark:bg-idea-panel dark:text-idea-text px-4 md:px-6 py-2.5 flex justify-between items-center shrink-0 shadow-md z-20 transition-colors duration-300">
         <div class="flex items-center gap-3">
-            <button @click="openLeftDrawer" class="mobile-only touch-btn flex items-center justify-center w-10 h-10 -ml-2 rounded-lg hover:bg-slate-800 dark:hover:bg-idea-hover transition-colors"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+            <button @click="togglePanel('leftDrawer')" class="mobile-only touch-btn flex items-center justify-center w-10 h-10 -ml-2 rounded-lg hover:bg-slate-800 dark:hover:bg-idea-hover transition-colors"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg></button>
             <div class="w-8 h-8 bg-indigo-500 dark:bg-idea-button rounded flex items-center justify-center font-bold text-xl shadow shrink-0 text-white">M</div>
             <h1 class="text-base md:text-lg font-semibold tracking-wide truncate">Mindustry VS</h1>
         </div>
         <div class="flex items-center gap-2 md:gap-3">
-            <button @click="toggleTheme" class="touch-btn flex items-center justify-center w-9 h-9 rounded-lg bg-slate-800 dark:bg-idea-card hover:bg-slate-700 dark:hover:bg-idea-hover transition-colors text-slate-300 dark:text-idea-text">
+            <button @click="toggleTheme" class="touch-btn flex items-center justify-center w-9 h-9 rounded-lg bg-slate-800 dark:bg-idea-card hover:bg-slate-700 dark:hover:bg-idea-hover transition-colors text-slate-300 dark:text-idea-text" title="切换主题 (跟随系统/手动)">
                 <svg v-if="isDarkMode" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
                 <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
             </button>
-            <button @click="controlCenterOpen = true" class="desktop-only bg-slate-800 dark:bg-idea-card hover:bg-slate-700 dark:hover:bg-idea-hover px-3 py-1.5 rounded text-sm font-medium transition-colors border border-slate-700 dark:border-idea-border flex items-center gap-1.5">
+            <button @click="togglePanel('controlCenter')" class="desktop-only bg-slate-800 dark:bg-idea-card hover:bg-slate-700 dark:hover:bg-idea-hover px-3 py-1.5 rounded text-sm font-medium transition-colors border border-slate-700 dark:border-idea-border flex items-center gap-1.5">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg><span>控制中心</span>
             </button>
             <input type="file" ref="dictFileInput" accept=".json" class="hidden" @change="importDict">
@@ -100,22 +153,49 @@
         </div>
     </header>
 
-    <!-- 移动端底部导航 -->
-    <nav v-if="connected" class="mobile-only fixed bottom-0 left-0 right-0 bg-white dark:bg-idea-panel border-t border-slate-200 dark:border-idea-borderDark z-[50] safe-bottom flex justify-around items-center h-14 transition-colors duration-300 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-        <button @click="openLeftDrawer" :class="['mobile-nav-item touch-btn flex-1 flex flex-col items-center justify-center gap-0.5 text-slate-500 dark:text-idea-textMuted transition-colors', { 'text-indigo-600 dark:text-idea-keyword active': leftDrawerOpen }]"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg><span class="text-[10px]">添加字段</span></button>
-        <button @click="togglePreviewPanel" :class="['mobile-nav-item touch-btn flex-1 flex flex-col items-center justify-center gap-0.5 text-slate-500 dark:text-idea-textMuted transition-colors', { 'text-indigo-600 dark:text-idea-keyword active': previewOpen }]"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h2m-2 4h10m-10 4h14M4 18h14"/></svg><span class="text-[10px]">结构树</span></button>
-        <button @click="controlCenterOpen = true" class="mobile-nav-item touch-btn flex-1 flex flex-col items-center justify-center gap-0.5 text-slate-500 dark:text-idea-textMuted transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/></svg><span class="text-[10px]">控制中心</span></button>
+    <!-- 移动端底部导航 - 层级提升至 z-[85] -->
+    <nav v-if="connected" class="mobile-only fixed bottom-0 left-0 right-0 bg-white dark:bg-idea-panel border-t border-slate-200 dark:border-idea-borderDark z-[85] safe-bottom flex justify-around items-center h-14 transition-colors duration-300 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+        <button @click="togglePanel('leftDrawer')" :class="['mobile-nav-item touch-btn flex-1 flex flex-col items-center justify-center gap-0.5 text-slate-500 dark:text-idea-textMuted transition-colors', { 'text-indigo-600 dark:text-idea-keyword active': leftDrawerOpen }]"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg><span class="text-[10px]">添加字段</span></button>
+        <button @click="togglePanel('preview')" :class="['mobile-nav-item touch-btn flex-1 flex flex-col items-center justify-center gap-0.5 text-slate-500 dark:text-idea-textMuted transition-colors', { 'text-indigo-600 dark:text-idea-keyword active': previewOpen }]"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h2m-2 4h10m-10 4h14M4 18h14"/></svg><span class="text-[10px]">结构树</span></button>
+        <button @click="togglePanel('controlCenter')" :class="['mobile-nav-item touch-btn flex-1 flex flex-col items-center justify-center gap-0.5 text-slate-500 dark:text-idea-textMuted transition-colors', { 'text-indigo-600 dark:text-idea-keyword active': controlCenterOpen }]"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/></svg><span class="text-[10px]">控制中心</span></button>
     </nav>
 
-    <!-- 统一控制中心 (Control Center) -->
-    <transition name="modal">
-        <div v-if="controlCenterOpen" class="fixed inset-0 z-[60] flex items-end md:items-center justify-center bg-black/60 backdrop-blur-sm transition-colors" @click="controlCenterOpen = false">
-            <div class="bg-slate-50 dark:bg-idea-panel w-full md:w-[700px] md:max-h-[85vh] md:rounded-2xl rounded-t-2xl shadow-2xl overflow-hidden transition-transform duration-300 transform flex flex-col border border-transparent dark:border-idea-borderDark" :class="{'translate-y-0': controlCenterOpen, 'translate-y-full md:translate-y-0': !controlCenterOpen}" @click.stop>
+    <!-- 统一控制中心 (Control Center) 分离遮罩和内容动画 -->
+    <transition name="fade">
+        <div v-if="controlCenterOpen" class="fixed inset-0 z-[60] mobile-dialog-container bg-black/60 backdrop-blur-sm" @click="controlCenterOpen = false"></div>
+    </transition>
+    <transition name="slide-up">
+        <div v-if="controlCenterOpen" class="fixed inset-0 z-[60] mobile-dialog-container flex items-end md:items-center justify-center pointer-events-none">
+            <div class="slide-panel pointer-events-auto bg-slate-50 dark:bg-idea-panel w-full md:w-[700px] h-[70vh] md:h-auto md:max-h-[85vh] rounded-t-2xl md:rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-transparent dark:border-idea-borderDark" @click.stop>
                 <div class="px-5 py-4 bg-white dark:bg-idea-card border-b border-slate-200 dark:border-idea-borderDark flex justify-between items-center shrink-0">
                     <h3 class="text-lg font-bold text-slate-800 dark:text-idea-text flex items-center gap-2"><svg class="w-5 h-5 text-indigo-500 dark:text-idea-keyword" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>控制中心</h3>
                     <button @click="controlCenterOpen = false" class="touch-btn w-8 h-8 flex items-center justify-center bg-slate-100 dark:bg-idea-bg rounded-full text-slate-500 hover:text-slate-800 dark:text-idea-textMuted dark:hover:text-white transition-colors"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
                 </div>
                 <div class="p-4 md:p-6 overflow-y-auto custom-scrollbar flex-1 space-y-6 pb-20 md:pb-6">
+                    
+                    <!-- 模块 0：本地项目管理 -->
+                    <div>
+                        <div class="flex items-center justify-between mb-3 ml-1">
+                            <h4 class="text-xs font-bold text-slate-400 dark:text-idea-textMuted uppercase tracking-wider">本地项目 (Browser Storage)</h4>
+                            <button @click="saveProjectToDb" class="text-xs bg-indigo-50 dark:bg-idea-button/20 text-indigo-600 dark:text-idea-keyword px-2 py-1 rounded hover:bg-indigo-100 dark:hover:bg-idea-button/40 transition-colors flex items-center gap-1">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/></svg> 保存当前
+                            </button>
+                        </div>
+                        <div class="space-y-2 max-h-[180px] overflow-y-auto custom-scrollbar pr-1">
+                            <div v-if="localProjects.length === 0" class="text-center py-5 text-xs text-slate-400 dark:text-idea-textMuted border border-dashed border-slate-200 dark:border-idea-borderDark rounded-lg">暂无本地保存的项目，点击右上角保存当前实例。</div>
+                            <div v-for="proj in localProjects" :key="proj.id" class="flex items-center justify-between p-3 bg-white dark:bg-idea-card rounded-lg border border-slate-200 dark:border-idea-border shadow-sm group">
+                                <div class="flex flex-col min-w-0">
+                                    <span class="text-sm font-bold text-slate-700 dark:text-idea-text truncate">{{ proj.name }}</span>
+                                    <span class="text-[10px] text-slate-400 dark:text-idea-textMuted mt-0.5">{{ new Date(proj.time).toLocaleString() }} - 类型: {{ proj.className }}</span>
+                                </div>
+                                <div class="flex gap-1 opacity-50 group-hover:opacity-100 transition-opacity shrink-0">
+                                    <button @click="loadProjectFromDb(proj)" class="p-1.5 text-indigo-500 hover:bg-indigo-50 dark:hover:bg-idea-selection rounded transition-colors" title="加载"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg></button>
+                                    <button @click="deleteProjectFromDb(proj.id)" class="p-1.5 text-red-400 hover:bg-red-50 dark:hover:bg-idea-danger/20 rounded transition-colors" title="删除"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- 模块 1：扩展与自定义 -->
                     <div>
                         <h4 class="text-xs font-bold text-slate-400 dark:text-idea-textMuted uppercase tracking-wider mb-3 ml-1">自定义模型 (Schema)</h4>
@@ -155,12 +235,12 @@
                         </div>
                     </div>
 
-                    <!-- 模块 4：工程 -->
+                    <!-- 模块 4：文件工程 -->
                     <div>
-                        <h4 class="text-xs font-bold text-slate-400 dark:text-idea-textMuted uppercase tracking-wider mb-3 ml-1">工程与视图</h4>
+                        <h4 class="text-xs font-bold text-slate-400 dark:text-idea-textMuted uppercase tracking-wider mb-3 ml-1">文件工程与视图</h4>
                         <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                            <button @click="showImportDialog(); controlCenterOpen = false" class="py-2 px-3 bg-white dark:bg-idea-card rounded-lg border border-slate-200 dark:border-idea-border text-sm text-slate-600 dark:text-idea-text hover:bg-slate-50 dark:hover:bg-idea-hover transition-colors">导入工程</button>
-                            <button @click="showExportDialog(); controlCenterOpen = false" class="py-2 px-3 bg-white dark:bg-idea-card rounded-lg border border-slate-200 dark:border-idea-border text-sm text-slate-600 dark:text-idea-text hover:bg-slate-50 dark:hover:bg-idea-hover transition-colors">导出工程</button>
+                            <button @click="showImportDialog(); controlCenterOpen = false" class="py-2 px-3 bg-white dark:bg-idea-card rounded-lg border border-slate-200 dark:border-idea-border text-sm text-slate-600 dark:text-idea-text hover:bg-slate-50 dark:hover:bg-idea-hover transition-colors">导入 JSON</button>
+                            <button @click="showExportDialog(); controlCenterOpen = false" class="py-2 px-3 bg-white dark:bg-idea-card rounded-lg border border-slate-200 dark:border-idea-border text-sm text-slate-600 dark:text-idea-text hover:bg-slate-50 dark:hover:bg-idea-hover transition-colors">导出 JSON</button>
                             <button @click="collapseAll(); controlCenterOpen = false" :disabled="workspaceMode !== 'instance'" class="py-2 px-3 bg-white dark:bg-idea-card rounded-lg border border-slate-200 dark:border-idea-border text-sm text-slate-600 dark:text-idea-text hover:bg-slate-50 dark:hover:bg-idea-hover disabled:opacity-50 transition-colors">全部折叠</button>
                             <button @click="expandAll(); controlCenterOpen = false" :disabled="workspaceMode !== 'instance'" class="py-2 px-3 bg-white dark:bg-idea-card rounded-lg border border-slate-200 dark:border-idea-border text-sm text-slate-600 dark:text-idea-text hover:bg-slate-50 dark:hover:bg-idea-hover disabled:opacity-50 transition-colors">全部展开</button>
                         </div>
@@ -171,11 +251,14 @@
     </transition>
 
     <!-- ========================================== -->
-    <!-- Schema 控制台 (Schema Console Modal)       -->
+    <!-- Schema 控制台 (Schema Console Modal) 分离动画 -->
     <!-- ========================================== -->
-    <transition name="modal">
-        <div v-if="schemaConsoleOpen" class="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm transition-colors" @click="schemaConsoleOpen = false">
-            <div class="bg-slate-50 dark:bg-idea-panel w-full max-w-3xl h-[85vh] rounded-2xl shadow-2xl flex flex-col border border-transparent dark:border-idea-borderDark overflow-hidden" @click.stop>
+    <transition name="fade">
+        <div v-if="schemaConsoleOpen" class="fixed inset-0 z-[70] mobile-dialog-container bg-black/60 backdrop-blur-sm" @click="schemaConsoleOpen = false"></div>
+    </transition>
+    <transition name="slide-up">
+        <div v-if="schemaConsoleOpen" class="fixed inset-0 z-[70] mobile-dialog-container flex items-end md:items-center justify-center pointer-events-none">
+            <div class="slide-panel pointer-events-auto bg-slate-50 dark:bg-idea-panel w-full max-w-3xl h-[75vh] md:h-[85vh] rounded-t-2xl md:rounded-2xl shadow-2xl flex flex-col border border-transparent dark:border-idea-borderDark overflow-hidden" @click.stop>
 
                 <div class="px-5 py-4 bg-white dark:bg-idea-card border-b border-slate-200 dark:border-idea-borderDark flex justify-between items-center shrink-0">
                     <div class="flex items-center gap-3">
@@ -378,7 +461,9 @@
             </div>
         </section>
 
-        <aside class="preview-panel w-full md:w-1/3 bg-slate-900 dark:bg-[#1e1e1e] flex flex-col border-l border-slate-800 dark:border-idea-borderDark shadow-2xl transition-colors duration-300" :class="{ open: previewOpen || !isMobile }">
+        <!-- 移动端实例树遮罩层 -->
+        <div v-if="connected" class="drawer-overlay mobile-only z-[54] mobile-dialog-container" :class="{ open: previewOpen }" @click="previewOpen = false"></div>
+        <aside v-if="connected" class="preview-panel w-full md:w-1/3 bg-slate-900 dark:bg-[#1e1e1e] flex flex-col border-l border-slate-800 dark:border-idea-borderDark shadow-2xl" :class="{ open: previewOpen || !isMobile }">
             <div class="h-12 flex items-center px-4 bg-slate-800 dark:bg-idea-panel border-b border-slate-700 dark:border-idea-borderDark justify-between shrink-0 transition-colors rounded-t-xl md:rounded-none">
                 <div class="flex items-center gap-2"><span class="text-sm font-bold text-slate-200 dark:text-idea-text">{{ workspaceMode === 'schema' ? '类结构预览树' : '实例结构树' }}</span></div>
                 <button @click="previewOpen = false" class="mobile-only touch-btn w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
@@ -566,14 +651,17 @@
     // ==========================================
     // 1. 本地化数据引擎 (DictManager)
     // ==========================================
-    localforage.config({ name: 'MindustryVS', storeName: 'i18n_dict', description: '存储类、字段、实例的本地化名称与文档' });
+    localforage.config({ name: 'MindustryVS' }); // 全局设置
+    const i18nStore = localforage.createInstance({ name: 'MindustryVS', storeName: 'i18n_dict', description: '存储类、字段、实例的本地化名称与文档' });
+    
     class DictManager {
         constructor() { this._cache = new Map(); this._loaded = false; this._loading = null; }
         async _ensureLoaded() {
             if (this._loaded) return; if (this._loading) return this._loading;
             this._loading = (async () => {
                 try {
-                    await localforage.ready(); const dbName = localforage._dbInfo.name; const storeName = localforage._dbInfo.storeName;
+                    await i18nStore.ready();
+                    const dbName = i18nStore._dbInfo.name; const storeName = i18nStore._dbInfo.storeName;
                     const db = await new Promise((resolve, reject) => { const req = indexedDB.open(dbName); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
                     const tx = db.transaction(storeName, 'readonly'); const store = tx.objectStore(storeName);
                     const [keys, values] = await Promise.all([
@@ -581,14 +669,14 @@
                         new Promise((res, rej) => { const r = store.getAll(); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); })
                     ]);
                     for (let i = 0; i < keys.length; i++) this._cache.set(keys[i], values[i]); db.close();
-                } catch (e) { await localforage.iterate((value, key) => { this._cache.set(key, value); }); }
+                } catch (e) { await i18nStore.iterate((value, key) => { this._cache.set(key, value); }); }
                 this._loaded = true; this._loading = null;
             })(); return this._loading;
         }
         async get(key) { await this._ensureLoaded(); return this._cache.get(key) ?? null; }
         async set(key, value) {
             let safeValue = (value === null || value === undefined) ? "" : String(value).trim(); if (safeValue === "null") safeValue = ""; this._cache.set(key, safeValue);
-            try { await localforage.ready(); await localforage.setItem(key, safeValue); } catch (e) {} return safeValue;
+            try { await i18nStore.setItem(key, safeValue); } catch (e) {} return safeValue;
         }
         async exportJSON() { await this._ensureLoaded(); const dict = {}; for (const [k, v] of this._cache) dict[k] = v; return JSON.stringify(dict, null, 2); }
         async importJSON(jsonString, onProgress) {
@@ -602,7 +690,7 @@
                     const seg = segments[prefix]; const BATCH = 500;
                     for (let i = 0; i < seg.length; i += BATCH) {
                         const batch = seg.slice(i, i + BATCH);
-                        await Promise.all(batch.map(([k, v]) => { let sv = (v === null || v === undefined) ? "" : String(v).trim(); if (sv === "null") sv = ""; return localforage.setItem(k, sv); }));
+                        await Promise.all(batch.map(([k, v]) => { let sv = (v === null || v === undefined) ? "" : String(v).trim(); if (sv === "null") sv = ""; return i18nStore.setItem(k, sv); }));
                         done += batch.length; if (onProgress) onProgress(Math.round(done / total * 100));
                     }
                 })); return true;
@@ -656,6 +744,11 @@
         }
     }
     const schemaMgr = new SchemaManager();
+
+    // ==========================================
+    // 1d. 本地项目管理器 (ProjectManager)
+    // ==========================================
+    const projectStore = localforage.createInstance({ name: 'MindustryVS', storeName: 'local_projects', description: '本地保存的项目实例' });
 
     // ==========================================
     // 2. WebSocket 客户端
@@ -965,18 +1058,134 @@
             const isGeneratingWeight = ref(false); const weightProgress = ref(0); const weightCurrentTask = ref(''); const isImportingWeight = ref(false); const importWeightProgress = ref(0);
             const isTrainingWeight = ref(false); const trainingProgress = ref(0); const trainingCurrentTask = ref('');
 
-            const leftDrawerOpen = ref(false); const previewOpen = ref(false); const isMobile = ref(isMobileDevice()); const isDarkMode = ref(document.documentElement.classList.contains('dark'));
+            // 本地项目
+            const localProjects = ref([]);
+
+            const leftDrawerOpen = ref(false); const previewOpen = ref(false); const isMobile = ref(isMobileDevice()); 
+            const isDarkMode = ref(false);
             const toasts = ref([]);
             const showToast = (msg, type = 'info') => { const id = Date.now() + Math.random(); toasts.value.push({ id, msg, type }); setTimeout(() => { toasts.value = toasts.value.filter(t => t.id !== id); }, 3000); };
             provide('showToast', showToast); provide('selectedClass', selectedClass); provide('allFields', allFields);
 
-            const toggleTheme = () => { isDarkMode.value = !isDarkMode.value; if (isDarkMode.value) { document.documentElement.classList.add('dark'); localStorage.setItem('theme', 'dark'); } else { document.documentElement.classList.remove('dark'); localStorage.setItem('theme', 'light'); } };
+            // 互斥打开底部面板
+            const togglePanel = (panelName) => {
+                if (panelName === 'leftDrawer') {
+                    leftDrawerOpen.value = !leftDrawerOpen.value;
+                    if (leftDrawerOpen.value) { previewOpen.value = false; controlCenterOpen.value = false; }
+                } else if (panelName === 'preview') {
+                    previewOpen.value = !previewOpen.value;
+                    if (previewOpen.value) { leftDrawerOpen.value = false; controlCenterOpen.value = false; }
+                } else if (panelName === 'controlCenter') {
+                    controlCenterOpen.value = !controlCenterOpen.value;
+                    if (controlCenterOpen.value) { leftDrawerOpen.value = false; previewOpen.value = false; }
+                }
+            };
+
+            // 主题管理
+            const updateTheme = (dark) => {
+                isDarkMode.value = dark;
+                if (dark) document.documentElement.classList.add('dark');
+                else document.documentElement.classList.remove('dark');
+            };
+
+            const initTheme = () => {
+                const savedTheme = localStorage.getItem('theme');
+                if (savedTheme) {
+                    updateTheme(savedTheme === 'dark');
+                } else {
+                    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                    updateTheme(prefersDark);
+                }
+            };
+
+            const toggleTheme = () => {
+                const newTheme = !isDarkMode.value;
+                updateTheme(newTheme);
+                localStorage.setItem('theme', newTheme ? 'dark' : 'light');
+            };
+
+            onMounted(() => {
+                initTheme();
+                // 监听系统主题变化
+                window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+                    if (!localStorage.getItem('theme')) { // 仅在用户未手动指定主题时跟随系统
+                        updateTheme(e.matches);
+                    }
+                });
+                
+                window.addEventListener('ws-error', (e) => showToast(e.detail, 'error'));
+                loadLocalProjects();
+            });
 
             const loadCustomSchemas = async () => {
                 const classes = await schemaMgr.getClasses();
                 customClassesData.value = classes;
                 customClasses.value = Object.keys(classes);
                 customFields.value = await schemaMgr.getFields();
+            };
+
+            // 本地项目管理
+            const loadLocalProjects = async () => {
+                const projects = [];
+                await projectStore.iterate((value, key) => {
+                    projects.push({ id: key, ...value });
+                });
+                localProjects.value = projects.sort((a, b) => b.time - a.time);
+            };
+
+            const saveProjectToDb = async () => {
+                if (classId.value === null || classId.value === undefined) { showToast('尚未创建任何实例', 'error'); return; }
+                try {
+                    const res = await wsApi.send('ExportClass', { Class_Id: classId.value });
+                    const content = res.Content;
+                    const projectName = prompt('请输入本地项目名称:', `${selectedClass.value}_${new Date().toLocaleTimeString('zh-CN', {hour12:false})}`);
+                    if (!projectName) return;
+
+                    const projectData = {
+                        name: projectName,
+                        className: selectedClass.value,
+                        time: Date.now(),
+                        content: content
+                    };
+                    await projectStore.setItem(`proj_${Date.now()}`, projectData);
+                    showToast('项目已成功保存到浏览器', 'success');
+                    await loadLocalProjects();
+                } catch (e) {
+                    showToast('保存失败: ' + e.message, 'error');
+                }
+            };
+
+            const loadProjectFromDb = async (project) => {
+                if (!connected.value) { showToast('请先连接服务器', 'error'); return; }
+                if (!confirm(`确定要加载本地项目 "${project.name}" 吗？当前未保存的更改将丢失。`)) return;
+
+                importing.value = true;
+                controlCenterOpen.value = false;
+                try {
+                    if (classId.value !== null && classId.value !== undefined) await wsApi.send('RemoveClass', { Class_Id: classId.value });
+                    const res = await wsApi.send('ImportClass', { Content: project.content });
+                    if (!res.Success) { showToast('加载失败: ' + res.Message, 'error'); return; }
+
+                    const newClassId = res.Class_Id;
+                    classId.value = newClassId;
+                    selectedClass.value = project.className;
+                    stepRecorder.clear();
+                    stepRecorder.record({ type: 'NewClass', className: project.className, classId: newClassId });
+                    await loadWorkspace(newClassId, project.className);
+                    showToast('项目加载成功！', 'success');
+                } catch (e) {
+                    showToast('加载失败: ' + (e.message || e), 'error');
+                } finally {
+                    importing.value = false;
+                }
+            };
+
+            const deleteProjectFromDb = async (id) => {
+                if (confirm('确定要删除该本地项目吗？此操作不可恢复。')) {
+                    await projectStore.removeItem(id);
+                    showToast('项目已删除', 'success');
+                    await loadLocalProjects();
+                }
             };
 
             const connectAndInit = async () => {
@@ -1131,7 +1340,7 @@
             };
 
             // ==========================================
-            // 导入导出、语言包、权重包逻辑 (保留原有)
+            // 导入导出、语言包、权重包逻辑
             // ==========================================
             const showImportDialog = () => { importDialogVisible.value = true; importProgress.value = 0; };
             const showExportDialog = () => { exportDialogVisible.value = true; };
@@ -1196,7 +1405,7 @@
 
             const exportDict = async () => { const jsonStr = await i18n.exportJSON(); const blob = new Blob([jsonStr], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `mindustry-lang-dict.json`; a.click(); URL.revokeObjectURL(url); showToast('语言包导出成功', 'success'); };
             const importDict = async (event) => { const file = event.target.files[0]; if (!file) return; if (isImportingDict.value) return; const reader = new FileReader(); reader.onload = async (e) => { isImportingDict.value = true; importDictProgress.value = 0; try { const success = await i18n.importJSON(e.target.result, (p) => { importDictProgress.value = p; }); if (success) showToast('语言包导入成功', 'success'); else showToast('语言包格式错误', 'error'); } catch (err) { showToast('导入失败: ' + (err.message || err), 'error'); } finally { isImportingDict.value = false; } }; reader.readAsText(file); event.target.value = ''; };
-            const resetDict = async () => { if (confirm('【危险操作】确定要清空本地所有语言包缓存吗？')) { await localforage.clear(); showToast('语言包已重置', 'success'); setTimeout(() => location.reload(), 1500); } };
+            const resetDict = async () => { if (confirm('【危险操作】确定要清空本地所有语言包缓存吗？')) { await i18nStore.clear(); showToast('语言包已重置', 'success'); setTimeout(() => location.reload(), 1500); } };
 
             const generateFullWeightPack = async () => {
                 if (!connected.value) { showToast('请先连接服务器', 'error'); return; } if (isGeneratingWeight.value) return; isGeneratingWeight.value = true; weightProgress.value = 0; weightCurrentTask.value = '正在拉取 Class 列表...';
@@ -1236,7 +1445,6 @@
             const expandAll = () => { const setCollapsed = (nodes, val) => { for (const node of nodes) { if (node.children && node.children.length > 0) { node.collapsed = val; setCollapsed(node.children, val); } } }; setCollapsed(rootNodes.value, false); };
 
             window.addEventListener('resize', () => { isMobile.value = isMobileDevice(); });
-            onMounted(() => { window.addEventListener('ws-error', (e) => showToast(e.detail, 'error')); });
 
             const filteredFields = computed(() => { if (!searchQuery.value) return allFields.value; const q = searchQuery.value.toLowerCase(); return allFields.value.filter(f => f.name.toLowerCase().includes(q) || f.displayName.toLowerCase().includes(q) || (f.type && f.type.toLowerCase().includes(q)) || (f.doc && f.doc.toLowerCase().includes(q))); });
             const filteredClassList = computed(() => { if (!classSearchQuery.value) return classList.value; const q = classSearchQuery.value.toLowerCase(); return classList.value.filter(cls => cls.name.toLowerCase().includes(q) || cls.displayName.toLowerCase().includes(q) || cls.doc.toLowerCase().includes(q)); });
@@ -1260,9 +1468,13 @@
                 classSelectorVisible, classSearchQuery, filteredClassList, selectAndCreateClass,
                 importDialogVisible, exportDialogVisible, importing, importProgress, showImportDialog, showExportDialog, exportJsonFile, importClass,
                 collapseAll, expandAll, isDarkMode, toggleTheme,
+                
+                // 本地项目
+                localProjects, saveProjectToDb, loadProjectFromDb, deleteProjectFromDb,
+
                 exportDict, importDict, generateFullDict, isGeneratingDict, dictProgress, dictCurrentTask, resetDict, isImportingDict, importDictProgress,
                 exportWeightPack, importWeightPack, generateFullWeightPack, isGeneratingWeight, weightProgress, weightCurrentTask, resetWeightPack, isImportingWeight, importWeightProgress, trainWeightFromMod, isTrainingWeight, trainingProgress, trainingCurrentTask,
-                leftDrawerOpen, openLeftDrawer: () => leftDrawerOpen.value = true, previewOpen, togglePreviewPanel: () => previewOpen.value = !previewOpen.value, isMobile, toasts
+                leftDrawerOpen, openLeftDrawer: () => togglePanel('leftDrawer'), previewOpen, togglePreviewPanel: () => togglePanel('preview'), isMobile, toasts, togglePanel
             };
         }
     });
