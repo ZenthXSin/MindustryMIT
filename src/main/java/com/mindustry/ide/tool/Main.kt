@@ -12,12 +12,12 @@ fun main(args: Array<String>) {
 
     println("请输入WebSocket 服务器端口")
     print("> ")
-    val line = readlnOrNull()?.trim()?.toIntOrNull() ?: 19190
-    if (line == 19190) println("使用默认端口 19190")
+    val line = readlnOrNull()?.trim()?.toIntOrNull() ?: 8317
+    if (line == 8317) println("使用默认端口 8317")
 
     println("是否启用 SSL/WSS？HTTPS 页面连接必须选 y (y/N)")
     print("> ")
-    val sslInput = readlnOrNull()?.trim()?.lowercase()
+    val sslInput = readlnOrNull() ?: "n"
     val useSSL = sslInput == "y" || sslInput == "yes"
     if (useSSL) System.setProperty("mindustrymit.useSSL", "true")
 
