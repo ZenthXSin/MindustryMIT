@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mindustry Visual Studio</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -20,7 +20,7 @@
     <script src="https://cdn.jsdelivr.net/npm/localforage@1.10.0/dist/localforage.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
     <style>
-        body { margin: 0; height: 100vh; overflow: hidden; font-family: 'Inter', system-ui, sans-serif; -webkit-tap-highlight-color: transparent; }
+        body { margin: 0; min-height: 100vh; height: 100dvh; overflow: hidden; font-family: 'Inter', system-ui, sans-serif; -webkit-tap-highlight-color: transparent; }
         .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
@@ -54,6 +54,7 @@
         
         /* 侧边抽屉与遮罩 */
         .drawer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 40; opacity: 0; visibility: hidden; transition: opacity 0.3s ease, visibility 0.3s ease; }
+        .preview-backdrop { z-index: 54; }
         .dark .drawer-overlay { background: rgba(0,0,0,0.7); } .drawer-overlay.open { opacity: 1; visibility: visible; }
         .drawer-panel { position: fixed; top: 0; bottom: 0; width: 85%; max-width: 320px; background: white; z-index: 45; transform: translateX(-100%); transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1); box-shadow: 4px 0 20px rgba(0,0,0,0.15); display: flex; flex-direction: column; will-change: transform; }
         .dark .drawer-panel { background: #252526; box-shadow: 4px 0 20px rgba(0,0,0,0.5); } .drawer-panel.open { transform: translateX(0); }
@@ -79,11 +80,7 @@
             .desktop-only { display: none !important; } 
             .main-section { width: 100% !important; max-width: none !important; } 
             
-            /* 让所有移动端弹出层底部停靠在导航栏上方 */
-            .mobile-dialog-container, .drawer-overlay {
-                bottom: calc(3.5rem + env(safe-area-inset-bottom)) !important;
-            }
-            .drawer-panel {
+            .mobile-preview-container, .drawer-panel {
                 bottom: calc(3.5rem + env(safe-area-inset-bottom)) !important;
             }
 
@@ -153,8 +150,8 @@
         </div>
     </header>
 
-    <!-- 移动端底部导航 - 层级提升至 z-[85] -->
-    <nav v-if="connected" class="mobile-only fixed bottom-0 left-0 right-0 bg-white dark:bg-idea-panel border-t border-slate-200 dark:border-idea-borderDark z-[85] safe-bottom flex justify-around items-center h-14 transition-colors duration-300 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+    <!-- 移动端底部导航 -->
+    <nav v-if="connected" class="mobile-only fixed bottom-0 left-0 right-0 bg-white dark:bg-idea-panel border-t border-slate-200 dark:border-idea-borderDark z-[50] safe-bottom flex justify-around items-center h-14 transition-colors duration-300 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
         <button @click="togglePanel('leftDrawer')" :class="['mobile-nav-item touch-btn flex-1 flex flex-col items-center justify-center gap-0.5 text-slate-500 dark:text-idea-textMuted transition-colors', { 'text-indigo-600 dark:text-idea-keyword active': leftDrawerOpen }]"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg><span class="text-[10px]">添加字段</span></button>
         <button @click="togglePanel('preview')" :class="['mobile-nav-item touch-btn flex-1 flex flex-col items-center justify-center gap-0.5 text-slate-500 dark:text-idea-textMuted transition-colors', { 'text-indigo-600 dark:text-idea-keyword active': previewOpen }]"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h2m-2 4h10m-10 4h14M4 18h14"/></svg><span class="text-[10px]">结构树</span></button>
         <button @click="togglePanel('controlCenter')" :class="['mobile-nav-item touch-btn flex-1 flex flex-col items-center justify-center gap-0.5 text-slate-500 dark:text-idea-textMuted transition-colors', { 'text-indigo-600 dark:text-idea-keyword active': controlCenterOpen }]"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/></svg><span class="text-[10px]">控制中心</span></button>
@@ -162,10 +159,10 @@
 
     <!-- 统一控制中心 (Control Center) 分离遮罩和内容动画 -->
     <transition name="fade">
-        <div v-if="controlCenterOpen" class="fixed inset-0 z-[60] mobile-dialog-container bg-black/60 backdrop-blur-sm" @click="controlCenterOpen = false"></div>
+        <div v-if="controlCenterOpen" class="fixed inset-0 z-[90] bg-black/60 backdrop-blur-sm" @click="controlCenterOpen = false"></div>
     </transition>
     <transition name="slide-up">
-        <div v-if="controlCenterOpen" class="fixed inset-0 z-[60] mobile-dialog-container flex items-end md:items-center justify-center pointer-events-none">
+        <div v-if="controlCenterOpen" class="fixed inset-0 z-[90] flex items-end md:items-center justify-center pointer-events-none">
             <div class="slide-panel pointer-events-auto bg-slate-50 dark:bg-idea-panel w-full md:w-[700px] h-[70vh] md:h-auto md:max-h-[85vh] rounded-t-2xl md:rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-transparent dark:border-idea-borderDark" @click.stop>
                 <div class="px-5 py-4 bg-white dark:bg-idea-card border-b border-slate-200 dark:border-idea-borderDark flex justify-between items-center shrink-0">
                     <h3 class="text-lg font-bold text-slate-800 dark:text-idea-text flex items-center gap-2"><svg class="w-5 h-5 text-indigo-500 dark:text-idea-keyword" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>控制中心</h3>
@@ -254,10 +251,10 @@
     <!-- Schema 控制台 (Schema Console Modal) 分离动画 -->
     <!-- ========================================== -->
     <transition name="fade">
-        <div v-if="schemaConsoleOpen" class="fixed inset-0 z-[70] mobile-dialog-container bg-black/60 backdrop-blur-sm" @click="schemaConsoleOpen = false"></div>
+        <div v-if="schemaConsoleOpen" class="fixed inset-0 z-[90] bg-black/60 backdrop-blur-sm" @click="schemaConsoleOpen = false"></div>
     </transition>
     <transition name="slide-up">
-        <div v-if="schemaConsoleOpen" class="fixed inset-0 z-[70] mobile-dialog-container flex items-end md:items-center justify-center pointer-events-none">
+        <div v-if="schemaConsoleOpen" class="fixed inset-0 z-[90] flex items-end md:items-center justify-center pointer-events-none">
             <div class="slide-panel pointer-events-auto bg-slate-50 dark:bg-idea-panel w-full max-w-3xl h-[75vh] md:h-[85vh] rounded-t-2xl md:rounded-2xl shadow-2xl flex flex-col border border-transparent dark:border-idea-borderDark overflow-hidden" @click.stop>
 
                 <div class="px-5 py-4 bg-white dark:bg-idea-card border-b border-slate-200 dark:border-idea-borderDark flex justify-between items-center shrink-0">
@@ -462,7 +459,7 @@
         </section>
 
         <!-- 移动端实例树遮罩层 -->
-        <div v-if="connected" class="drawer-overlay mobile-only z-[54] mobile-dialog-container" :class="{ open: previewOpen }" @click="previewOpen = false"></div>
+        <div v-if="connected" class="drawer-overlay preview-backdrop mobile-only mobile-preview-container" :class="{ open: previewOpen }" @click="previewOpen = false"></div>
         <aside v-if="connected" class="preview-panel w-full md:w-1/3 bg-slate-900 dark:bg-[#1e1e1e] flex flex-col border-l border-slate-800 dark:border-idea-borderDark shadow-2xl" :class="{ open: previewOpen || !isMobile }">
             <div class="h-12 flex items-center px-4 bg-slate-800 dark:bg-idea-panel border-b border-slate-700 dark:border-idea-borderDark justify-between shrink-0 transition-colors rounded-t-xl md:rounded-none">
                 <div class="flex items-center gap-2"><span class="text-sm font-bold text-slate-200 dark:text-idea-text">{{ workspaceMode === 'schema' ? '类结构预览树' : '实例结构树' }}</span></div>
@@ -755,25 +752,50 @@
     // ==========================================
     const isMobileDevice = () => window.innerWidth <= 768 || 'ontouchstart' in window;
     class MindustryWSClient {
-        constructor() { this.ws = null; this.resolvers = {}; }
+        constructor() { this.ws = null; this.resolvers = {}; this.typeQueues = {}; }
         connect(url) {
+            this.closeSilently();
             return new Promise((resolve, reject) => {
+                let settled = false;
                 try { this.ws = new WebSocket(url); } catch (e) { return reject(new Error('WebSocket 初始化失败: ' + e.message)); }
-                this.ws.onopen = () => { console.log("[WS] 连接成功"); resolve(); }; this.ws.onmessage = (e) => this.handleMessage(e.data);
-                this.ws.onerror = (e) => { reject(new Error('无法连接到服务器，请检查地址和端口是否正确')); }; this.ws.onclose = (e) => { this.rejectAllPendingRequests('连接已断开'); };
+                const socket = this.ws;
+                socket.onopen = () => { settled = true; console.log("[WS] 连接成功"); resolve(); };
+                socket.onmessage = (e) => { if (socket === this.ws) this.handleMessage(e.data); };
+                socket.onerror = () => { if (!settled) { settled = true; reject(new Error('无法连接到服务器，请检查地址和端口是否正确')); } };
+                socket.onclose = () => {
+                    if (socket !== this.ws) return;
+                    this.ws = null; this.rejectAllPendingRequests('连接已断开'); this.resetQueues('连接已断开');
+                    window.dispatchEvent(new CustomEvent('ws-close'));
+                    if (!settled) { settled = true; reject(new Error('连接已断开')); }
+                };
             });
+        }
+        closeSilently() {
+            if (!this.ws) return;
+            const old = this.ws; this.ws = null;
+            old.onopen = old.onmessage = old.onerror = old.onclose = null;
+            if (old.readyState === WebSocket.OPEN || old.readyState === WebSocket.CONNECTING) old.close();
+            this.rejectAllPendingRequests('连接已重置'); this.resetQueues('连接已重置');
         }
         handleMessage(rawData) {
             try {
                 const response = JSON.parse(rawData); const { wsType, dataList } = response; const parsedData = this.parseDataList(dataList);
                 if (wsType === 'Error') {
                     const errMsg = parsedData?.Message || rawData; window.dispatchEvent(new CustomEvent('ws-error', { detail: errMsg }));
-                    if (this.resolvers[wsType] && this.resolvers[wsType].length > 0) this.resolvers[wsType].shift().reject(new Error(errMsg)); return;
+                    const pendingType = Object.keys(this.resolvers).find(type => this.resolvers[type] && this.resolvers[type].length > 0);
+                    if (pendingType) this.resolvers[pendingType].shift().reject(new Error(errMsg)); return;
                 }
                 if (this.resolvers[wsType] && this.resolvers[wsType].length > 0) this.resolvers[wsType].shift().resolve(parsedData);
             } catch (error) {}
         }
         send(wsType, contentObj = null) {
+            if (!this.typeQueues[wsType]) this.typeQueues[wsType] = Promise.resolve();
+            const run = () => this.sendNow(wsType, contentObj);
+            const queued = this.typeQueues[wsType].then(run, run);
+            this.typeQueues[wsType] = queued.catch(() => {});
+            return queued;
+        }
+        sendNow(wsType, contentObj = null) {
             return new Promise((resolve, reject) => {
                 if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return reject(new Error('WebSocket 未连接'));
                 const payload = { wsType }; if (contentObj) payload.content = JSON.stringify(contentObj);
@@ -781,6 +803,7 @@
             });
         }
         rejectAllPendingRequests(reason) { Object.keys(this.resolvers).forEach(wsType => { while (this.resolvers[wsType].length > 0) this.resolvers[wsType].shift().reject(new Error(reason)); }); }
+        resetQueues(reason) { Object.keys(this.typeQueues).forEach(wsType => { this.typeQueues[wsType] = Promise.reject(new Error(reason)).catch(() => {}); }); }
         parseDataList(dataObj) {
             if (dataObj === null || dataObj === undefined) return null; if (typeof dataObj !== 'object') return dataObj;
             if (Array.isArray(dataObj)) return dataObj.map(item => this.parseDataList(item));
@@ -1063,12 +1086,20 @@
 
             const leftDrawerOpen = ref(false); const previewOpen = ref(false); const isMobile = ref(isMobileDevice()); 
             const isDarkMode = ref(false);
-            const toasts = ref([]);
+            const toasts = ref([]); let instanceOpToken = 0;
             const showToast = (msg, type = 'info') => { const id = Date.now() + Math.random(); toasts.value.push({ id, msg, type }); setTimeout(() => { toasts.value = toasts.value.filter(t => t.id !== id); }, 3000); };
+            const cleanupOldClass = async (oldClassId, newClassId) => { if (oldClassId === null || oldClassId === undefined || oldClassId === newClassId) return; try { await wsApi.send('RemoveClass', { Class_Id: oldClassId }); } catch (e) { console.warn('清理旧实例失败:', e); } };
             provide('showToast', showToast); provide('selectedClass', selectedClass); provide('allFields', allFields);
+
+            const closeTransientPanels = () => {
+                leftDrawerOpen.value = false; previewOpen.value = false; controlCenterOpen.value = false; schemaConsoleOpen.value = false;
+                typeSelectorOpen.value = false; schemaMetaEditorOpen.value = false; schemaFieldEditorOpen.value = false; extendClassModalOpen.value = false;
+                importDialogVisible.value = false; exportDialogVisible.value = false;
+            };
 
             // 互斥打开底部面板
             const togglePanel = (panelName) => {
+                if (schemaConsoleOpen.value) schemaConsoleOpen.value = false;
                 if (panelName === 'leftDrawer') {
                     leftDrawerOpen.value = !leftDrawerOpen.value;
                     if (leftDrawerOpen.value) { previewOpen.value = false; controlCenterOpen.value = false; }
@@ -1104,6 +1135,13 @@
                 localStorage.setItem('theme', newTheme ? 'dark' : 'light');
             };
 
+            const handleWsClose = () => {
+                const wasConnected = connected.value;
+                connected.value = false; isConnecting.value = false; isLoadingFields.value = false; importing.value = false;
+                closeTransientPanels();
+                if (wasConnected) showToast('连接已断开', 'error');
+            };
+
             onMounted(() => {
                 initTheme();
                 // 监听系统主题变化
@@ -1112,9 +1150,14 @@
                         updateTheme(e.matches);
                     }
                 });
-                
+
                 window.addEventListener('ws-error', (e) => showToast(e.detail, 'error'));
+                window.addEventListener('ws-close', handleWsClose);
                 loadLocalProjects();
+            });
+
+            onUnmounted(() => {
+                window.removeEventListener('ws-close', handleWsClose);
             });
 
             const loadCustomSchemas = async () => {
@@ -1159,24 +1202,28 @@
                 if (!connected.value) { showToast('请先连接服务器', 'error'); return; }
                 if (!confirm(`确定要加载本地项目 "${project.name}" 吗？当前未保存的更改将丢失。`)) return;
 
+                const token = ++instanceOpToken; const oldClassId = classId.value; const projectClassName = project.className; let newClassId = null; let switched = false;
                 importing.value = true;
                 controlCenterOpen.value = false;
                 try {
-                    if (classId.value !== null && classId.value !== undefined) await wsApi.send('RemoveClass', { Class_Id: classId.value });
                     const res = await wsApi.send('ImportClass', { Content: project.content });
                     if (!res.Success) { showToast('加载失败: ' + res.Message, 'error'); return; }
 
-                    const newClassId = res.Class_Id;
+                    newClassId = res.Class_Id;
+                    const workspace = await loadWorkspaceData(newClassId, projectClassName);
+                    if (token !== instanceOpToken) { await cleanupOldClass(newClassId, oldClassId); return; }
                     classId.value = newClassId;
-                    selectedClass.value = project.className;
+                    selectedClass.value = projectClassName;
+                    allFields.value = workspace.fields; rootNodes.value = workspace.nodes; searchQuery.value = ''; switched = true;
                     stepRecorder.clear();
-                    stepRecorder.record({ type: 'NewClass', className: project.className, classId: newClassId });
-                    await loadWorkspace(newClassId, project.className);
+                    stepRecorder.record({ type: 'NewClass', className: projectClassName, classId: newClassId });
+                    await cleanupOldClass(oldClassId, newClassId);
                     showToast('项目加载成功！', 'success');
                 } catch (e) {
+                    if (!switched) await cleanupOldClass(newClassId, oldClassId);
                     showToast('加载失败: ' + (e.message || e), 'error');
                 } finally {
-                    importing.value = false;
+                    if (token === instanceOpToken) importing.value = false;
                 }
             };
 
@@ -1314,22 +1361,24 @@
             // 原有实例编辑逻辑
             // ==========================================
             const createInstance = async () => {
-                if (classId.value !== null && classId.value !== undefined) await wsApi.send('RemoveClass', { Class_Id: classId.value });
+                const token = ++instanceOpToken; const oldClassId = classId.value; const className = selectedClass.value; let cid = null; let switched = false;
                 isLoadingFields.value = true;
                 try {
-                    const res = await wsApi.send('NewClass', { Class_Name: selectedClass.value }); let cid = res.Class_Id; if (typeof cid === 'object' && cid !== null) cid = Object.values(cid)[0]; classId.value = cid;
-                    stepRecorder.clear(); stepRecorder.record({ type: 'NewClass', className: selectedClass.value, classId: cid });
-                    const fRes = await wsApi.send('AllField', { Class_Name: selectedClass.value });
+                    const res = await wsApi.send('NewClass', { Class_Name: className }); cid = res.Class_Id; if (typeof cid === 'object' && cid !== null) cid = Object.values(cid)[0];
+                    const fRes = await wsApi.send('AllField', { Class_Name: className }); let nextFields = [];
                     if (fRes.Field_List) {
                         const fieldsPromises = fRes.Field_List.map(async f => {
                             const fieldName = typeof f === 'string' ? f : (f.str || String(f)); const fieldType = typeof f === 'string' ? 'String' : (f.json || 'String');
-                            const docStr = await DataProvider.getFieldDoc(selectedClass.value, fieldName); const displayName = await DataProvider.getDisplayName('Field', selectedClass.value, fieldName); const weight = await weightMgr.getFieldWeight(selectedClass.value, fieldName);
+                            const docStr = await DataProvider.getFieldDoc(className, fieldName); const displayName = await DataProvider.getDisplayName('Field', className, fieldName); const weight = await weightMgr.getFieldWeight(className, fieldName);
                             return { name: fieldName, displayName: displayName, type: fieldType, doc: docStr === "" ? "暂无描述" : docStr, weight };
                         });
-                        allFields.value = (await Promise.all(fieldsPromises)).sort((a, b) => b.weight - a.weight || a.name.localeCompare(b.name));
-                    } else allFields.value = [];
-                    rootNodes.value = []; searchQuery.value = ''; showToast(`已创建 ${selectedClass.value} 实例`, 'success');
-                } catch (e) { showToast('创建实例失败: ' + (e.message || e), 'error'); } finally { isLoadingFields.value = false; }
+                        nextFields = (await Promise.all(fieldsPromises)).sort((a, b) => b.weight - a.weight || a.name.localeCompare(b.name));
+                    }
+                    if (token !== instanceOpToken) { await cleanupOldClass(cid, oldClassId); return; }
+                    classId.value = cid; selectedClass.value = className; allFields.value = nextFields; switched = true;
+                    stepRecorder.clear(); stepRecorder.record({ type: 'NewClass', className, classId: cid });
+                    rootNodes.value = []; searchQuery.value = ''; await cleanupOldClass(oldClassId, cid); showToast(`已创建 ${className} 实例`, 'success');
+                } catch (e) { if (!switched) await cleanupOldClass(cid, oldClassId); showToast('创建实例失败: ' + (e.message || e), 'error'); } finally { if (token === instanceOpToken) isLoadingFields.value = false; }
             };
 
             const selectAndCreateClass = (clsName) => { selectedClass.value = clsName; classSelectorVisible.value = false; classSearchQuery.value = ''; createInstance(); };
@@ -1352,37 +1401,43 @@
                     const blob = new Blob([finalContent], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${selectedClass.value.toLowerCase()}.json`; a.click(); URL.revokeObjectURL(url); exportDialogVisible.value = false; showToast('JSON 导出成功', 'success');
                 } catch (e) { showToast('导出 JSON 失败: ' + e.message, 'error'); }
             };
+            const loadWorkspaceData = async (cid, cName) => {
+                const fRes = await wsApi.send('AllField', { Class_Name: cName }); let nextFields = [];
+                if (fRes.Field_List) {
+                    const fieldsPromises = fRes.Field_List.map(async f => { const fieldName = typeof f === 'string' ? f : (f.str || String(f)); const fieldType = typeof f === 'string' ? 'String' : (f.json || 'String'); const docStr = await DataProvider.getFieldDoc(cName, fieldName); const displayName = await DataProvider.getDisplayName('Field', cName, fieldName); const weight = await weightMgr.getFieldWeight(cName, fieldName); return { name: fieldName, displayName, type: fieldType, doc: docStr === "" ? "暂无描述" : docStr, weight }; });
+                    nextFields = (await Promise.all(fieldsPromises)).sort((a, b) => b.weight - a.weight || a.name.localeCompare(b.name));
+                }
+                const exportRes = await wsApi.send('ExportClass', { Class_Id: cid });
+                const data = JSON.parse(exportRes.Content); const nextRootNodes = [];
+                for (const [key, value] of Object.entries(data)) { if (key === 'type') continue; const field = nextFields.find(f => f.name === key); const fieldType = field ? field.type : 'String'; const tInfo = parseTypeInfo(fieldType); const node = buildNodeFromData(key, value, [key], tInfo.baseType, {}); node.fieldType = tInfo.baseType; const isShorthandArray = Array.isArray(value) && value.length > 0 && value.every(v => typeof v === 'string'); node.elementType = isShorthandArray ? 'String' : tInfo.elementType; node.isArray = tInfo.isArray; nextRootNodes.push(node); }
+                return { fields: nextFields, nodes: nextRootNodes };
+            };
+
             const loadWorkspace = async (cid, cName) => {
                 isLoadingFields.value = true; searchQuery.value = '';
-                try {
-                    const fRes = await wsApi.send('AllField', { Class_Name: cName });
-                    if (fRes.Field_List) {
-                        const fieldsPromises = fRes.Field_List.map(async f => { const fieldName = typeof f === 'string' ? f : (f.str || String(f)); const fieldType = typeof f === 'string' ? 'String' : (f.json || 'String'); const docStr = await DataProvider.getFieldDoc(cName, fieldName); const displayName = await DataProvider.getDisplayName('Field', cName, fieldName); const weight = await weightMgr.getFieldWeight(cName, fieldName); return { name: fieldName, displayName, type: fieldType, doc: docStr === "" ? "暂无描述" : docStr, weight }; });
-                        allFields.value = (await Promise.all(fieldsPromises)).sort((a, b) => b.weight - a.weight || a.name.localeCompare(b.name));
-                    } else allFields.value = [];
-                    const exportRes = await wsApi.send('ExportClass', { Class_Id: cid });
-                    const data = JSON.parse(exportRes.Content); rootNodes.value = [];
-                    for (const [key, value] of Object.entries(data)) { if (key === 'type') continue; const field = allFields.value.find(f => f.name === key); const fieldType = field ? field.type : 'String'; const tInfo = parseTypeInfo(fieldType); const node = buildNodeFromData(key, value, [key], tInfo.baseType, {}); node.fieldType = tInfo.baseType; const isShorthandArray = Array.isArray(value) && value.length > 0 && value.every(v => typeof v === 'string'); node.elementType = isShorthandArray ? 'String' : tInfo.elementType; node.isArray = tInfo.isArray; rootNodes.value.push(node); }
-                } finally { isLoadingFields.value = false; }
+                try { const workspace = await loadWorkspaceData(cid, cName); allFields.value = workspace.fields; rootNodes.value = workspace.nodes; }
+                finally { isLoadingFields.value = false; }
             };
 
             const importClass = async (event) => {
                 const file = event.target.files[0]; if (!file) return;
+                const token = ++instanceOpToken; const oldClassId = classId.value; let newClassId = null; let switched = false;
                 importing.value = true; importProgress.value = 10;
                 try {
                     const content = await new Promise((resolve, reject) => { const r = new FileReader(); r.onload = e => resolve(e.target.result); r.onerror = reject; r.readAsText(file); });
                     const parsed = JSON.parse(content); const className = parsed.type; if (!className) { showToast('JSON 中缺少 type 字段', 'error'); return; }
-                    if (classId.value !== null && classId.value !== undefined) await wsApi.send('RemoveClass', { Class_Id: classId.value });
                     importProgress.value = 30;
                     const res = await wsApi.send('ImportClass', { Content: content });
                     if (!res.Success) { showToast('导入失败: ' + res.Message, 'error'); return; }
-                    const newClassId = res.Class_Id; classId.value = newClassId; selectedClass.value = className;
-                    importProgress.value = 60;
+                    newClassId = res.Class_Id; importProgress.value = 60;
+                    const workspace = await loadWorkspaceData(newClassId, className);
+                    if (token !== instanceOpToken) { await cleanupOldClass(newClassId, oldClassId); return; }
+                    classId.value = newClassId; selectedClass.value = className; allFields.value = workspace.fields; rootNodes.value = workspace.nodes; searchQuery.value = ''; switched = true;
                     stepRecorder.clear(); stepRecorder.record({ type: 'NewClass', className, classId: newClassId });
-                    await loadWorkspace(newClassId, className);
+                    await cleanupOldClass(oldClassId, newClassId);
                     importProgress.value = 100;
                     importDialogVisible.value = false; showToast('导入成功！', 'success');
-                } catch (e) { showToast('导入失败: ' + (e.message || e), 'error'); } finally { importing.value = false; event.target.value = ''; }
+                } catch (e) { if (!switched) await cleanupOldClass(newClassId, oldClassId); showToast('导入失败: ' + (e.message || e), 'error'); } finally { if (token === instanceOpToken) importing.value = false; event.target.value = ''; }
             };
 
             const generateFullDict = async () => {
