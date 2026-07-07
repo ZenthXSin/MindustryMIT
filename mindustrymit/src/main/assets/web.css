@@ -1,0 +1,95 @@
+        body { margin: 0; min-height: 100vh; height: 100dvh; overflow: hidden; font-family: 'Inter', system-ui, sans-serif; -webkit-tap-highlight-color: transparent; }
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #555555; }
+        .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #777777; }
+        .dark .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        
+        /* 淡入淡出动画 (用于遮罩) */
+        .fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
+        .fade-enter-from, .fade-leave-to { opacity: 0; }
+
+        /* 弹窗中心缩放动画 (用于小对话框) */
+        .modal-enter-active, .modal-leave-active { transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1); }
+        .modal-enter-from, .modal-leave-to { opacity: 0; }
+        .modal-enter-from .modal-content, .modal-leave-to .modal-content { transform: scale(0.95) translateY(10px); opacity: 0; }
+        .modal-content { transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1); will-change: transform, opacity; }
+
+        /* 滑出面板动画 (用于控制中心、Schema 等大型面板的容器) */
+        .slide-up-enter-active, .slide-up-leave-active { transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1); will-change: transform; }
+        .slide-up-enter-from, .slide-up-leave-to { transform: translateY(100%); }
+        
+        .toast-enter-active, .toast-leave-active { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .toast-enter-from, .toast-leave-to { opacity: 0; transform: translateX(100%); }
+        @keyframes spin { to { transform: rotate(360deg); } } .animate-spin { animation: spin 1s linear infinite; }
+        
+        /* 移动端导航指示器 */
+        .mobile-nav-item { position: relative; }
+        .mobile-nav-item.active::after { content: ''; position: absolute; bottom: 0; left: 20%; right: 20%; height: 3px; background: #6366f1; border-radius: 2px 2px 0 0; }
+        .dark .mobile-nav-item.active::after { background: #569cd6; }
+        
+        /* 侧边抽屉与遮罩 */
+        .drawer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 40; opacity: 0; visibility: hidden; transition: opacity 0.3s ease, visibility 0.3s ease; }
+        .preview-backdrop { z-index: 54; }
+        .dark .drawer-overlay { background: rgba(0,0,0,0.7); } .drawer-overlay.open { opacity: 1; visibility: visible; }
+        .drawer-panel { position: fixed; top: 0; bottom: 0; width: 85%; max-width: 320px; background: white; z-index: 45; transform: translateX(-100%); transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1); box-shadow: 4px 0 20px rgba(0,0,0,0.15); display: flex; flex-direction: column; will-change: transform; }
+        .dark .drawer-panel { background: #252526; box-shadow: 4px 0 20px rgba(0,0,0,0.5); } .drawer-panel.open { transform: translateX(0); }
+        
+        .touch-btn { min-height: 44px; min-width: 44px; } .touch-input { min-height: 44px; font-size: 16px; }
+        .json-font { font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace; font-size: 13.5px; line-height: 1.6; }
+        .json-row { display: flex; align-items: flex-start; border-radius: 4px; margin: 1px 0; transition: background-color 0.15s; }
+        .json-row:hover { background-color: rgba(99, 102, 241, 0.08); } .dark .json-row:hover { background-color: rgba(255, 255, 255, 0.05); }
+        .json-key { color: #881391; font-weight: 600; } .dark .json-key { color: #9cdcfe; font-weight: normal; }
+        .json-string { color: #c41a16; } .dark .json-string { color: #ce9178; }
+        .json-bracket { color: #334155; } .dark .json-bracket { color: #d4d4d4; }
+        .json-comment { color: #16a34a; font-style: italic; cursor: pointer; transition: opacity 0.2s; } .dark .json-comment { color: #6a9955; } .json-comment:hover { opacity: 0.8; text-decoration: underline; }
+        .json-indent { margin-left: 0.5rem; padding-left: 0.8rem; border-left: 1px solid #cbd5e1; transition: border-color 0.2s; }
+        .dark .json-indent { border-left-color: #404040; } .dark .json-indent:hover { border-left-color: #555555; } .json-indent:hover { border-left-color: #94a3b8; }
+        .json-input { background: transparent; border: none; border-bottom: 1px dashed transparent; color: inherit; font-family: inherit; font-size: inherit; width: 100%; max-width: 250px; padding: 0 2px; transition: all 0.2s; }
+        .json-input:focus { outline: none; border-bottom-color: #6366f1; background: rgba(99,102,241,0.05); } .dark .json-input:focus { border-bottom-color: #569cd6; background: rgba(255,255,255,0.05); } .json-input:hover { border-bottom-color: rgba(128,128,128,0.5); }
+        .json-actions { opacity: 0; transition: opacity 0.2s; } .json-row:hover .json-actions { opacity: 1; }
+        .grid-collapse { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.25s cubic-bezier(0.4, 0, 0.2, 1); } .grid-collapse.is-open { grid-template-rows: 1fr; } .grid-collapse-inner { min-height: 0; overflow: hidden; }
+        .node-move, .node-enter-active, .node-leave-active { transition: all 0.25s ease; } .node-enter-from, .node-leave-to { opacity: 0; transform: translateX(-10px); } .node-leave-active { position: absolute; width: 100%; z-index: 0; }
+        
+        /* 移动端避让导航栏设计与桌面端缩放覆盖 */
+        @media (max-width: 768px) { 
+            .desktop-only { display: none !important; } 
+            .main-section { width: 100% !important; max-width: none !important; } 
+            
+            .mobile-preview-container, .drawer-panel {
+                bottom: 3.5rem !important;
+                bottom: calc(3.5rem + env(safe-area-inset-bottom, 0px)) !important;
+            }
+
+            .preview-panel {
+                position: fixed;
+                bottom: 3.5rem;
+                bottom: calc(3.5rem + env(safe-area-inset-bottom, 0px));
+                left: 0;
+                right: 0;
+                height: 60vh;
+                z-index: 55 !important;
+                transform: translateY(calc(100% + 3.5rem));
+                transform: translateY(calc(100% + 3.5rem + env(safe-area-inset-bottom, 0px)));
+                transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+                border-radius: 16px 16px 0 0;
+                will-change: transform;
+            }
+            .preview-panel.open { 
+                transform: translateY(0); 
+                box-shadow: 0 -10px 40px rgba(0,0,0,0.3); 
+            } 
+            .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0); } 
+            .json-actions { opacity: 0.5; } 
+        }
+        @media (min-width: 769px) { 
+            .mobile-only { display: none !important; } 
+            .preview-panel { position: relative; transform: none !important; border-radius: 0; z-index: 10; }
+            
+            /* 桌面端控制中心和Schema维持居中缩放效果 */
+            .slide-up-enter-active, .slide-up-leave-active { transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s ease; }
+            .slide-up-enter-from, .slide-up-leave-to { transform: scale(0.95) translateY(20px); opacity: 0; }
+        }
+        @media (max-width: 640px) { .modal-content, .slide-panel { width: 100% !important; margin: 0; } .modal-content { width: 95% !important; margin: 0 10px; } .json-font { font-size: 12.5px; } }
