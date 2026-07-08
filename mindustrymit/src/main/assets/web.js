@@ -492,6 +492,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const updateTheme = (dark) => {
                 isDarkMode.value = dark;
                 document.documentElement.classList.toggle('dark', dark);
+                document.body.classList.toggle('dark', dark);
                 document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
             };
 
