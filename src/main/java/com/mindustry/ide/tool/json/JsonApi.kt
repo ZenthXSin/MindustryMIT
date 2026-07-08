@@ -570,6 +570,15 @@ class JsonApi {
                         jsonFormat.encodeToString(WebSocketData.serializer(), reply)
                     }
 
+                    WebSocketDataType.ParentType -> {
+                        val className = data.dataList["Class_Name"]?.str ?: ""
+                        val reply = WebSocketData.reply(
+                            WebSocketDataType.ParentType,
+                            mapOf("Parent_Type" to Data(str = parser.getParentType(className)))
+                        )
+                        jsonFormat.encodeToString(WebSocketData.serializer(), reply)
+                    }
+
                     WebSocketDataType.AllField -> {
                         val className = data.dataList["Class_Name"]?.str ?: ""
                         val fields = parser.getAllFields(className)
@@ -1309,7 +1318,12 @@ enum class WebSocketDataType(
             "Success" to DataType.Boolean, "Doc_Count" to DataType.Int, "Message" to DataType.String
         )
     ),
-    AllClass(output = listOf("Class_List" to DataType.List)), AllField(
+    AllClass(output = listOf("Class_List" to DataType.List)),
+    ParentType(
+        listOf("Class_Name" to DataType.String),
+        listOf("Parent_Type" to DataType.String)
+    ),
+    AllField(
         listOf("Class_Name" to DataType.String),
         listOf("Field_List" to DataType.List)
     ),
