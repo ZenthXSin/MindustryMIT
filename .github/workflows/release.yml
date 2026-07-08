@@ -78,7 +78,7 @@ jobs:
           mkdir -p release
           cp build/libs/tool-${{ steps.ver.outputs.version }}.jar "release/tool-${{ steps.ver.outputs.version }}.jar"
           cp mindustrymit/src/main/assets/web.html "release/web.html"
-          cp mindustrymit/build/outputs/apk/release/*.apk "release/mindustrymit-release.apk"
+          cp mindustrymit/build/outputs/apk/release/*.apk "release/MIT-${{ steps.ver.outputs.version }}.apk"
 
       - name: Create tag and GitHub Release
         uses: softprops/action-gh-release@v2
@@ -89,6 +89,6 @@ jobs:
           files: |
             release/tool-${{ steps.ver.outputs.version }}.jar
             release/web.html
-            release/mindustrymit-release.apk
+            release/MIT-${{ steps.ver.outputs.version }}.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
