@@ -66,23 +66,8 @@ class BackendService : Service() {
         httpServer = object : NanoHTTPD(HTTP_PORT) {
             override fun serve(session: IHTTPSession): Response {
                 sendLog("[HTTP] ${session.method} ${session.uri}")
-                val path = java.net.URLDecoder.decode(session.uri.trimStart('/').substringAfterLast('/'), "UTF-8")
-                val assetName = when (path) {
-                    "", "web.html" -> "web.html"
-                    "web.css" -> "web.css"
-                    "web.js" -> "web.js"
-                    "MMIT中文语言包.json" -> "MMIT中文语言包.json"
-                    "MMIT权重包.json" -> "MMIT权重包.json"
-                    else -> "web.html"
-                }
-                val mimeType = when (assetName) {
-                    "web.css" -> "text/css"
-                    "web.js" -> "application/javascript"
-                    "MMIT中文语言包.json", "MMIT权重包.json" -> "application/json"
-                    else -> "text/html"
-                }
-                val content = assets.open(assetName).bufferedReader().readText()
-                return newFixedLengthResponse(Response.Status.OK, mimeType, content)
+                val html = assets.open("web.html").bufferedReader().readText()
+                return newFixedLengthResponse(Response.Status.OK, "text/html", html)
             }
         }.also { it.start() }
         sendLog("[HTTP] Web 服务器已启动")
