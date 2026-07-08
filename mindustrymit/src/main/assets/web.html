@@ -4,12 +4,34 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mindustry Visual Studio</title>
-    <script src="/web.js"></script>
+    <script>
+        window.tailwind = window.tailwind || {};
+        window.tailwind.config = {
+            darkMode: 'class',
+            theme: { extend: { colors: { idea: {
+                bg: '#1e1e1e', panel: '#252526', card: '#2d2d30', border: '#3e3e42', borderDark: '#1e1e1e',
+                text: '#cccccc', textMuted: '#858585', keyword: '#569cd6', string: '#ce9178',
+                number: '#b5cea8', field: '#9cdcfe', button: '#0e639c', buttonHover: '#1177bb',
+                hover: '#2a2d2e', selection: '#04395e', danger: '#f14c4c', dangerHover: '#d13c3c'
+            }}}}
+        };
+    </script>
+    <script>
+        (() => {
+            let savedTheme = null;
+            try { savedTheme = localStorage.getItem('theme'); } catch (e) {}
+            const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const dark = savedTheme ? savedTheme === 'dark' : prefersDark;
+            document.documentElement.classList.toggle('dark', dark);
+            document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+        })();
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/localforage@1.10.0/dist/localforage.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
     <link rel="stylesheet" href="/web.css">
+    <script src="/web.js"></script>
 </head>
 <body class="bg-white text-slate-800 dark:bg-idea-bg dark:text-idea-text transition-colors duration-300">
 

@@ -1,14 +1,3 @@
-window.tailwind = window.tailwind || {};
-window.tailwind.config = {
-    darkMode: 'class',
-    theme: { extend: { colors: { idea: {
-                    bg: '#1e1e1e', panel: '#252526', card: '#2d2d30', border: '#3e3e42', borderDark: '#1e1e1e',
-                    text: '#cccccc', textMuted: '#858585', keyword: '#569cd6', string: '#ce9178',
-                    number: '#b5cea8', field: '#9cdcfe', button: '#0e639c', buttonHover: '#1177bb',
-                    hover: '#2a2d2e', selection: '#04395e', danger: '#f14c4c', dangerHover: '#d13c3c'
-                }}}}
-};
-
 document.addEventListener('DOMContentLoaded', () => {
     // ==========================================
     // 1. 本地化数据引擎 (DictManager)
@@ -188,12 +177,27 @@ document.addEventListener('DOMContentLoaded', () => {
     // 3. 数据提供者 (DataProvider)
     // ==========================================
     const parentClassCache = {};
-    async function buildParentClassMap() {
-        try {
-            const res = await wsApi.send('AllClass'); const allClasses = (res.Class_List || []).map(c => typeof c === 'string' ? c : (c.str || String(c)));
-            const tasks = allClasses.map(async cls => { try { const subRes = await wsApi.send('AllClass', { Parent_Class: cls }); const subs = (subRes.Class_List || []).map(c => typeof c === 'string' ? c : (c.str || String(c))); for (const sub of subs) { if (sub !== cls && !parentClassCache[sub]) parentClassCache[sub] = cls; } } catch (e) {} });
-            for (let i = 0; i < tasks.length; i += 20) await Promise.all(tasks.slice(i, i + 20));
-        } catch (e) {}
+    let parentClassMapPromise = null;
+    let parentClassMapToken = 0;
+    async function buildParentClassMap(classNames = null) {
+        if (parentClassMapPromise) return parentClassMapPromise;
+        const token = parentClassMapToken;
+        parentClassMapPromise = (async () => {
+            const sourceClasses = classNames || (await wsApi.send('AllClass')).Class_List || [];
+            const allClasses = sourceClasses.map(c => typeof c === 'string' ? c : (c.str || String(c)));
+            const nextParentClassCache = {};
+            for (const cls of allClasses) {
+                try {
+                    const res = await wsApi.send('ParentType', { Class_Name: cls });
+                    const parent = res.Parent_Type ? (typeof res.Parent_Type === 'string' ? res.Parent_Type : (res.Parent_Type.str || String(res.Parent_Type))) : '';
+                    if (parent && parent !== cls) nextParentClassCache[cls] = parent;
+                } catch (e) {}
+            }
+            if (token !== parentClassMapToken) return;
+            for (const key of Object.keys(parentClassCache)) delete parentClassCache[key];
+            Object.assign(parentClassCache, nextParentClassCache);
+        })().catch(e => { console.warn('构建类继承关系失败:', e); }).finally(() => { if (token === parentClassMapToken) parentClassMapPromise = null; });
+        return parentClassMapPromise;
     }
     const DataProvider = {
         getParentClass(className) { return parentClassCache[className] || ""; },
@@ -480,26 +484,33 @@ document.addEventListener('DOMContentLoaded', () => {
             };
 
             // 主题管理
+            let manualThemeOverride = null;
+            const getSavedTheme = () => {
+                if (manualThemeOverride) return manualThemeOverride;
+                try { return localStorage.getItem('theme'); } catch (e) { return null; }
+            };
             const updateTheme = (dark) => {
                 isDarkMode.value = dark;
-                if (dark) document.documentElement.classList.add('dark');
-                else document.documentElement.classList.remove('dark');
+                document.documentElement.classList.toggle('dark', dark);
+                document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
             };
 
             const initTheme = () => {
-                const savedTheme = localStorage.getItem('theme');
+                const savedTheme = getSavedTheme();
                 if (savedTheme) {
                     updateTheme(savedTheme === 'dark');
                 } else {
-                    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-                    updateTheme(prefersDark);
+                    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                    updateTheme(!!prefersDark);
                 }
             };
 
             const toggleTheme = () => {
                 const newTheme = !isDarkMode.value;
+                const themeName = newTheme ? 'dark' : 'light';
+                manualThemeOverride = themeName;
                 updateTheme(newTheme);
-                localStorage.setItem('theme', newTheme ? 'dark' : 'light');
+                try { localStorage.setItem('theme', themeName); } catch (e) {}
             };
 
             const handleWsClose = () => {
@@ -558,12 +569,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
             onMounted(() => {
                 initTheme();
-                // 监听系统主题变化
-                window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
-                    if (!localStorage.getItem('theme')) { // 仅在用户未手动指定主题时跟随系统
-                        updateTheme(e.matches);
-                    }
-                });
+                const media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+                if (media) {
+                    const handleSystemTheme = e => { if (!getSavedTheme()) updateTheme(e.matches); };
+                    if (media.addEventListener) media.addEventListener('change', handleSystemTheme);
+                    else if (media.addListener) media.addListener(handleSystemTheme);
+                }
 
                 window.addEventListener('ws-error', (e) => showToast(e.detail, 'error'));
                 window.addEventListener('ws-close', handleWsClose);
@@ -665,6 +676,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 isConnecting.value = true; connectProgress.value = { text: '正在连接 WebSocket...', percent: 5 };
                 try {
                     let correctedUrl = wsUrl.value.trim(); if (correctedUrl.startsWith('ws//')) correctedUrl = 'ws://' + correctedUrl.slice(4); else if (correctedUrl.startsWith('wss//')) correctedUrl = 'wss://' + correctedUrl.slice(5); wsUrl.value = correctedUrl;
+                    parentClassMapToken++; parentClassMapPromise = null;
                     await wsApi.connect(correctedUrl); connectProgress.value = { text: '连接成功，正在初始化...', percent: 15 };
                     await wsApi.send('Init', { Data_Dir: dataDir.value });
 
@@ -672,7 +684,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     const syncRes = await schemaMgr.syncToBackend(wsApi); await loadCustomSchemas();
                     console.log(`[init] 同步了 ${syncRes.classCount} 个自定义 Class, ${syncRes.fieldCount} 个扩展 Field`);
 
-                    connectProgress.value = { text: '正在构建类继承关系...', percent: 50 }; await buildParentClassMap();
                     connectProgress.value = { text: '正在加载类型列表...', percent: 70 };
                     const res = await wsApi.send('AllClass'); const rawClasses = res.Class_List ? res.Class_List.sort() : [];
                     connectProgress.value = { text: `正在翻译类型名称 (${rawClasses.length} 个)...`, percent: 85 };
@@ -683,6 +694,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }));
                     classObjs.sort((a, b) => b.weight - a.weight || a.name.localeCompare(b.name)); classList.value = classObjs;
                     connectProgress.value = { text: '完成', percent: 100 }; connected.value = true;
+                    buildParentClassMap(rawClasses).catch(() => {});
                 } catch (e) { showToast("连接或初始化失败: " + (e.message || e), 'error'); connected.value = false; connectProgress.value = { text: '失败: ' + (e.message || ''), percent: 0 }; } finally { isConnecting.value = false; }
             };
 
