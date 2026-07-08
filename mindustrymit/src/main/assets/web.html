@@ -5,17 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mindustry Visual Studio</title>
     <script>
-        window.tailwind = {
-            config: {
-                darkMode: 'class',
-                theme: { extend: { colors: { idea: {
-                    bg: '#1e1e1e', panel: '#252526', card: '#2d2d30', border: '#3e3e42', borderDark: '#1e1e1e',
-                    text: '#cccccc', textMuted: '#858585', keyword: '#569cd6', string: '#ce9178',
-                    number: '#b5cea8', field: '#9cdcfe', button: '#0e639c', buttonHover: '#1177bb',
-                    hover: '#2a2d2e', selection: '#04395e', danger: '#f14c4c', dangerHover: '#d13c3c'
-                }}}}
-            }
+        window.tailwindConfig = {
+            darkMode: 'class',
+            theme: { extend: { colors: { idea: {
+                bg: '#1e1e1e', panel: '#252526', card: '#2d2d30', border: '#3e3e42', borderDark: '#1e1e1e',
+                text: '#cccccc', textMuted: '#858585', keyword: '#569cd6', string: '#ce9178',
+                number: '#b5cea8', field: '#9cdcfe', button: '#0e639c', buttonHover: '#1177bb',
+                hover: '#2a2d2e', selection: '#04395e', danger: '#f14c4c', dangerHover: '#d13c3c'
+            }}}}
         };
+        window.tailwind = window.tailwind || {};
+        window.tailwind.config = window.tailwindConfig;
     </script>
     <script>
         (() => {

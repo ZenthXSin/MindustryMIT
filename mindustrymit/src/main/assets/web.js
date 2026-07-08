@@ -507,7 +507,7 @@ document.addEventListener('DOMContentLoaded', () => {
             };
 
             const toggleTheme = () => {
-                const newTheme = !isDarkMode.value;
+                const newTheme = !document.documentElement.classList.contains('dark');
                 const themeName = newTheme ? 'dark' : 'light';
                 manualThemeOverride = themeName;
                 updateTheme(newTheme);
