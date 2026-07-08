@@ -336,7 +336,7 @@
             </div>
         </aside>
 
-        <section class="main-section flex-1 bg-white dark:bg-idea-bg relative overflow-y-auto transition-colors duration-300 custom-scrollbar" :class="{ 'pb-16 md:pb-0': connected && isMobile }">
+        <section class="main-section flex-1 bg-white dark:bg-idea-bg relative overflow-y-auto transition-colors duration-300 custom-scrollbar" :class="{ 'mobile-workspace-safe-bottom md:pb-0': connected && isMobile }">
             <div class="py-4 px-2 md:p-8 max-w-5xl mx-auto w-full">
                 <div v-if="workspaceMode === 'instance'">
                     <div v-if="classId === null" class="text-center text-slate-400 dark:text-idea-textMuted mt-32 transition-colors"><p class="text-lg">请先在左侧选择类型并创建实例</p></div>

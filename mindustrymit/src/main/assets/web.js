@@ -680,6 +680,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     parentClassMapToken++; parentClassMapPromise = null;
                     await wsApi.connect(correctedUrl); connectProgress.value = { text: '连接成功，正在初始化...', percent: 15 };
                     await wsApi.send('Init', { Data_Dir: dataDir.value });
+                    connectProgress.value = { text: '正在创建 Block 实例...', percent: 25 };
+                    await wsApi.send('NewClass', { Class_Name: 'Block' });
 
                     connectProgress.value = { text: '正在同步自定义模型 (Schema)...', percent: 40 };
                     const syncRes = await schemaMgr.syncToBackend(wsApi); await loadCustomSchemas();
