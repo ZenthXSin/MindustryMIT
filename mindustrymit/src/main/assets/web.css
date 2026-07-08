@@ -82,7 +82,7 @@
                 box-shadow: 0 -10px 40px rgba(0,0,0,0.3); 
             } 
             .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0); }
-            .mobile-workspace-safe-bottom { padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px)); }
+            .mobile-workspace-safe-bottom { margin-bottom: calc(5rem + env(safe-area-inset-bottom, 0px)); }
             .json-actions { opacity: 0.5; }
         }
         @media (min-width: 769px) { 
