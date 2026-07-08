@@ -155,6 +155,14 @@ open class JsonParser : IJsonParser {
         return "Type: ${meta.type}\nParent: ${meta.parentType}\nFields: ${meta.fields.size}"
     }
 
+    private fun fieldTypeName(field: java.lang.reflect.Field): String {
+        if (field.isSeqOrArrayType()) {
+            val elementType = field.getSeqElementType()
+            if (elementType != null) return "${elementType.canonicalName ?: elementType.name}[]"
+        }
+        return field.type.canonicalName ?: field.type.name
+    }
+
     // 所有字段
     override fun getAllFields(className: String): List<FieldMeta> {
         val fieldsByName = linkedMapOf<String, FieldMeta>()
@@ -163,7 +171,7 @@ open class JsonParser : IJsonParser {
         getClassByName(className)?.fields
             ?.filter { it.isJsonVisibleField() }
             ?.forEach { field ->
-                fieldsByName[field.name] = FieldMeta(field.name, field.type.canonicalName ?: field.type.name, "", "")
+                fieldsByName[field.name] = FieldMeta(field.name, fieldTypeName(field), "", "")
             }
 
         // 自定义 class 的字段

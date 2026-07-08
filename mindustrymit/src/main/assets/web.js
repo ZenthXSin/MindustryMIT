@@ -225,10 +225,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function parseTypeInfo(typeName) {
         if (!typeName) return { isArray: false, elementType: null, baseType: 'String' };
-        if (typeName.startsWith('[L') && typeName.endsWith(';')) { const et = typeName.slice(2, -1); return { isArray: true, elementType: et, baseType: et }; }
-        if (typeName.endsWith('[]')) { const et = typeName.slice(0, -2); return { isArray: true, elementType: et, baseType: et }; }
-        if (/^\[[IFZBSJDC]$/.test(typeName)) { const map = { 'I': 'int', 'F': 'float', 'Z': 'boolean', 'B': 'byte', 'S': 'short', 'J': 'long', 'D': 'double', 'C': 'char' }; const et = map[typeName[1]] || 'Object'; return { isArray: true, elementType: et, baseType: et }; }
-        return { isArray: false, elementType: null, baseType: typeName };
+        const normalized = String(typeName).trim();
+        if (normalized.startsWith('[L') && normalized.endsWith(';')) { const et = normalized.slice(2, -1); return { isArray: true, elementType: et, baseType: et }; }
+        if (normalized.endsWith('[]')) { const et = normalized.slice(0, -2); return { isArray: true, elementType: et, baseType: et }; }
+        if (/^\[[IFZBSJDC]$/.test(normalized)) { const map = { 'I': 'int', 'F': 'float', 'Z': 'boolean', 'B': 'byte', 'S': 'short', 'J': 'long', 'D': 'double', 'C': 'char' }; const et = map[normalized[1]] || 'Object'; return { isArray: true, elementType: et, baseType: et }; }
+        const genericMatch = normalized.match(/^(?:arc\.struct\.)?Seq<(.+)>$|^(?:java\.util\.)?(?:List|ArrayList)<(.+)>$/);
+        if (genericMatch) { const et = (genericMatch[1] || genericMatch[2]).trim(); return { isArray: true, elementType: et, baseType: et }; }
+        if (['arc.struct.Seq', 'Seq', 'java.util.List', 'List', 'java.util.ArrayList', 'ArrayList'].includes(normalized)) return { isArray: true, elementType: null, baseType: 'Object' };
+        return { isArray: false, elementType: null, baseType: normalized };
+    }
+
+    function inferValueType(value) {
+        if (value && typeof value === 'object' && !Array.isArray(value)) return value.type || 'Object';
+        if (typeof value === 'boolean') return 'boolean';
+        if (typeof value === 'number') return Number.isInteger(value) ? 'int' : 'float';
+        return 'String';
+    }
+
+    function inferArrayElementType(arrayValue, fallbackElementType, fallbackBaseType) {
+        if (fallbackElementType) return fallbackElementType;
+        const sample = Array.isArray(arrayValue) ? arrayValue.find(v => v !== null && v !== undefined) : null;
+        if (sample !== null && sample !== undefined) return inferValueType(sample);
+        return fallbackBaseType && fallbackBaseType !== 'Array' ? fallbackBaseType : 'String';
     }
 
     class StepRecorder {
@@ -268,20 +286,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const ClassTreeNode = { name: 'ClassTreeNode', template: '#class-tree-node-template', props: { node: Object, label: String }, setup(props) { const isOpen = ref(true); const isExpandable = computed(() => props.node.children && props.node.children.length > 0); return { isOpen, isExpandable }; } };
 
-    function buildNodeFromData(key, data, path, fallbackType, pathMap) {
+    async function buildNodeFromData(key, data, path, fallbackType, pathMap, getFieldsForType = null) {
         const id = Date.now() + Math.random();
-        if (data === null || data === undefined) return { id, key, path, fieldType: fallbackType || 'String', elementType: null, isArray: false, value: '', children: [], expanded: false, collapsed: false, subclassType: null, subclassId: null };
-        if (typeof data === 'object' && !Array.isArray(data)) {
-            if (data.type) {
-                const subclassType = data.type; const subclassId = pathMap[path.join('.')] || null; const children = [];
-                for (const [k, v] of Object.entries(data)) { if (k === 'type') continue; children.push(buildNodeFromData(k, v, [...path, k], 'String', pathMap)); }
-                return { id, key, path, fieldType: fallbackType || 'Object', elementType: null, isArray: false, value: '', children, expanded: true, collapsed: false, subclassType, subclassId };
-            } else {
-                const children = []; for (const [k, v] of Object.entries(data)) children.push(buildNodeFromData(k, v, [...path, k], 'String', pathMap)); return { id, key, path, fieldType: fallbackType || 'Object', elementType: null, isArray: false, value: '', children, expanded: true, collapsed: false, subclassType: null, subclassId: null };
-            }
+        const tInfo = parseTypeInfo(fallbackType);
+        const fieldType = tInfo.baseType || inferValueType(data);
+        if (data === null || data === undefined) return { id, key, path, fieldType, elementType: tInfo.elementType, isArray: tInfo.isArray, value: '', children: [], expanded: false, collapsed: false, subclassType: null, subclassId: null };
+        if (Array.isArray(data)) {
+            const elementType = inferArrayElementType(data, tInfo.elementType, tInfo.baseType);
+            const children = [];
+            for (let idx = 0; idx < data.length; idx++) children.push(await buildNodeFromData(`#${idx}`, data[idx], [...path, `#${idx}`], elementType, pathMap, getFieldsForType));
+            return { id, key, path, fieldType, elementType, isArray: true, value: '', children, expanded: true, collapsed: false, subclassType: null, subclassId: null };
         }
-        if (Array.isArray(data)) { const children = data.map((item, idx) => buildNodeFromData(`#${idx}`, item, [...path, `#${idx}`], 'String', pathMap)); return { id, key, path, fieldType: fallbackType || 'Array', elementType: 'String', isArray: true, value: '', children, expanded: true, collapsed: false, subclassType: null, subclassId: null }; }
-        return { id, key, path, fieldType: fallbackType || 'String', elementType: null, isArray: false, value: String(data), children: [], expanded: false, collapsed: false, subclassType: null, subclassId: null };
+        if (typeof data === 'object') {
+            const subclassType = data.type || null;
+            const objectType = subclassType || fieldType;
+            const nestedFields = getFieldsForType ? await getFieldsForType(objectType) : [];
+            const children = [];
+            for (const [k, v] of Object.entries(data)) {
+                if (k === 'type') continue;
+                const childField = nestedFields.find(f => f.name === k);
+                const childType = childField ? childField.type : inferValueType(v);
+                children.push(await buildNodeFromData(k, v, [...path, k], childType, pathMap, getFieldsForType));
+            }
+            return { id, key, path, fieldType, elementType: tInfo.elementType, isArray: false, value: '', children, expanded: true, collapsed: false, subclassType, subclassId: subclassType ? (pathMap[path.join('.')] || null) : null };
+        }
+        return { id, key, path, fieldType, elementType: null, isArray: false, value: String(data), children: [], expanded: false, collapsed: false, subclassType: null, subclassId: null };
     }
 
     const EditorNode = {
@@ -843,14 +872,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 } catch (e) { showToast('导出 JSON 失败: ' + e.message, 'error'); }
             };
             const loadWorkspaceData = async (cid, cName) => {
-                const fRes = await wsApi.send('AllField', { Class_Name: cName }); let nextFields = [];
-                if (fRes.Field_List) {
-                    const fieldsPromises = fRes.Field_List.map(async f => { const fieldName = typeof f === 'string' ? f : (f.str || String(f)); const fieldType = typeof f === 'string' ? 'String' : (f.json || 'String'); const docStr = await DataProvider.getFieldDoc(cName, fieldName); const displayName = await DataProvider.getDisplayName('Field', cName, fieldName); const weight = await weightMgr.getFieldWeight(cName, fieldName); return { name: fieldName, displayName, type: fieldType, doc: docStr === "" ? "暂无描述" : docStr, weight }; });
-                    nextFields = (await Promise.all(fieldsPromises)).sort((a, b) => b.weight - a.weight || a.name.localeCompare(b.name));
-                }
+                const fieldCache = new Map();
+                const normalizeFields = async (typeName, rawFields) => {
+                    const fieldsPromises = (rawFields || []).map(async f => { const fieldName = typeof f === 'string' ? f : (f.str || String(f)); const fieldType = typeof f === 'string' ? 'String' : (f.json || 'String'); const docStr = await DataProvider.getFieldDoc(typeName, fieldName); const displayName = await DataProvider.getDisplayName('Field', typeName, fieldName); const weight = await weightMgr.getFieldWeight(typeName, fieldName); return { name: fieldName, displayName, type: fieldType, doc: docStr === "" ? "暂无描述" : docStr, weight }; });
+                    return (await Promise.all(fieldsPromises)).sort((a, b) => b.weight - a.weight || a.name.localeCompare(b.name));
+                };
+                const getFieldsForType = async (typeName) => {
+                    if (!typeName || isBasicType(typeName)) return [];
+                    if (fieldCache.has(typeName)) return fieldCache.get(typeName);
+                    try {
+                        const res = await wsApi.send('AllField', { Class_Name: typeName });
+                        const fields = await normalizeFields(typeName, res.Field_List || []);
+                        fieldCache.set(typeName, fields);
+                        return fields;
+                    } catch (e) { fieldCache.set(typeName, []); return []; }
+                };
+                const nextFields = await getFieldsForType(cName);
                 const exportRes = await wsApi.send('ExportClass', { Class_Id: cid });
                 const data = JSON.parse(exportRes.Content); const nextRootNodes = [];
-                for (const [key, value] of Object.entries(data)) { if (key === 'type') continue; const field = nextFields.find(f => f.name === key); const fieldType = field ? field.type : 'String'; const tInfo = parseTypeInfo(fieldType); const node = buildNodeFromData(key, value, [key], tInfo.baseType, {}); node.fieldType = tInfo.baseType; const isShorthandArray = Array.isArray(value) && value.length > 0 && value.every(v => typeof v === 'string'); node.elementType = isShorthandArray ? 'String' : tInfo.elementType; node.isArray = tInfo.isArray; nextRootNodes.push(node); }
+                for (const [key, value] of Object.entries(data)) {
+                    if (key === 'type') continue;
+                    const field = nextFields.find(f => f.name === key); const fieldType = field ? field.type : inferValueType(value); const tInfo = parseTypeInfo(fieldType);
+                    const node = await buildNodeFromData(key, value, [key], fieldType, {}, getFieldsForType);
+                    node.fieldType = tInfo.baseType || node.fieldType;
+                    node.isArray = tInfo.isArray || Array.isArray(value);
+                    node.elementType = node.isArray ? inferArrayElementType(value, tInfo.elementType || node.elementType, tInfo.baseType || node.fieldType) : node.elementType;
+                    nextRootNodes.push(node);
+                }
                 return { fields: nextFields, nodes: nextRootNodes };
             };
 
