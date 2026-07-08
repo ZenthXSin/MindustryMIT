@@ -4,9 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mindustry Visual Studio</title>
-    <script src="https://cdn.tailwindcss.com"></script>
     <script>
-        tailwind.config = {
+        window.tailwindConfig = {
             darkMode: 'class',
             theme: { extend: { colors: { idea: {
                 bg: '#1e1e1e', panel: '#252526', card: '#2d2d30', border: '#3e3e42', borderDark: '#1e1e1e',
@@ -15,6 +14,8 @@
                 hover: '#2a2d2e', selection: '#04395e', danger: '#f14c4c', dangerHover: '#d13c3c'
             }}}}
         };
+        window.tailwind = window.tailwind || {};
+        window.tailwind.config = window.tailwindConfig;
     </script>
     <script>
         (() => {
@@ -27,6 +28,7 @@
             document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
         })();
     </script>
+    <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/localforage@1.10.0/dist/localforage.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>

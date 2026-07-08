@@ -455,8 +455,8 @@ document.addEventListener('DOMContentLoaded', () => {
             // 本地项目
             const localProjects = ref([]);
 
-            const leftDrawerOpen = ref(false); const previewOpen = ref(false); const isMobile = ref(isMobileDevice());
-            const isDarkMode = ref(document.documentElement.classList.contains('dark'));
+            const leftDrawerOpen = ref(false); const previewOpen = ref(false); const isMobile = ref(isMobileDevice()); 
+            const isDarkMode = ref(false);
             const toasts = ref([]); let instanceOpToken = 0;
             const showToast = (msg, type = 'info') => { const id = Date.now() + Math.random(); toasts.value.push({ id, msg, type }); setTimeout(() => { toasts.value = toasts.value.filter(t => t.id !== id); }, 3000); };
             const cleanupOldClass = async (oldClassId, newClassId) => { if (oldClassId === null || oldClassId === undefined || oldClassId === newClassId) return; try { await wsApi.send('RemoveClass', { Class_Id: oldClassId }); } catch (e) { console.warn('清理旧实例失败:', e); } };
@@ -484,7 +484,9 @@ document.addEventListener('DOMContentLoaded', () => {
             };
 
             // 主题管理
+            let manualThemeOverride = null;
             const getSavedTheme = () => {
+                if (manualThemeOverride) return manualThemeOverride;
                 try { return localStorage.getItem('theme'); } catch (e) { return null; }
             };
             const updateTheme = (dark) => {
@@ -499,14 +501,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (savedTheme) {
                     updateTheme(savedTheme === 'dark');
                 } else {
-                    updateTheme(document.documentElement.classList.contains('dark'));
+                    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                    updateTheme(!!prefersDark);
                 }
             };
 
             const toggleTheme = () => {
-                const newTheme = !isDarkMode.value;
+                const newTheme = !document.documentElement.classList.contains('dark');
+                const themeName = newTheme ? 'dark' : 'light';
+                manualThemeOverride = themeName;
                 updateTheme(newTheme);
-                try { localStorage.setItem('theme', newTheme ? 'dark' : 'light'); } catch (e) {}
+                try { localStorage.setItem('theme', themeName); } catch (e) {}
             };
 
             const handleWsClose = () => {
