@@ -69,8 +69,10 @@ class BackendService : Service() {
                 val path = java.net.URLDecoder.decode(session.uri.trimStart('/').substringAfterLast('/'), "UTF-8")
                 val assetName = when (path) {
                     "", "web.html" -> "web.html"
+                    "workspace", "workspace.html" -> "workspace.html"
                     "web.css" -> "web.css"
                     "web.js" -> "web.js"
+                    "icon.png", "favicon.ico" -> "icon.png"
                     "MMIT中文语言包.json" -> "MMIT中文语言包.json"
                     "MMIT权重包.json" -> "MMIT权重包.json"
                     else -> "web.html"
@@ -78,11 +80,12 @@ class BackendService : Service() {
                 val mimeType = when (assetName) {
                     "web.css" -> "text/css"
                     "web.js" -> "application/javascript"
+                    "icon.png" -> "image/png"
                     "MMIT中文语言包.json", "MMIT权重包.json" -> "application/json"
                     else -> "text/html"
                 }
-                val content = assets.open(assetName).bufferedReader().readText()
-                return newFixedLengthResponse(Response.Status.OK, mimeType, content)
+                val input = assets.open(assetName)
+                return newChunkedResponse(Response.Status.OK, mimeType, input)
             }
         }.also { it.start() }
         sendLog("[HTTP] Web 服务器已启动")

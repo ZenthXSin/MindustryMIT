@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mindustry MIT</title>
+    <link rel="icon" type="image/png" href="/icon.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: { extend: { colors: { idea: {
+                bg: '#1e1e1e', panel: '#252526', card: '#2d2d30', border: '#3e3e42', borderDark: '#1e1e1e',
+                text: '#cccccc', textMuted: '#858585', keyword: '#569cd6', string: '#ce9178',
+                number: '#b5cea8', field: '#9cdcfe', button: '#0e639c', buttonHover: '#1177bb',
+                hover: '#2a2d2e', selection: '#04395e', danger: '#f14c4c', dangerHover: '#d13c3c'
+            }}}}
+        };
+    </script>
+    <script>
+        (() => {
+            let savedTheme = null;
+            try { savedTheme = localStorage.getItem('theme'); } catch (e) {}
+            const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const dark = savedTheme ? savedTheme === 'dark' : prefersDark;
+            document.documentElement.classList.toggle('dark', dark);
+            document.addEventListener('DOMContentLoaded', () => document.body.classList.toggle('dark', dark));
+            document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+        })();
+    </script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/localforage@1.10.0/dist/localforage.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+    <link rel="stylesheet" href="/web.css">
+    <script src="/web.js"></script>
+</head>
+<body class="bg-white text-slate-800 dark:bg-idea-bg dark:text-idea-text transition-colors duration-300">
+
+<div id="app" class="flex flex-col h-full relative">
+
+    <!-- 全局 Toast -->
+    <div class="fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none w-72 max-w-[90vw]">
+        <transition-group name="toast">
+            <div v-for="toast in toasts" :key="toast.id" class="px-4 py-3 rounded-lg shadow-xl text-sm font-medium flex items-start gap-2 backdrop-blur-sm" :class="toast.type === 'error' ? 'bg-red-500 dark:bg-idea-danger text-white' : (toast.type === 'success' ? 'bg-green-500 dark:bg-[#496d49] text-white' : 'bg-slate-800 text-white dark:bg-idea-panel dark:text-idea-text dark:border dark:border-idea-border')">
+                <span class="break-words flex-1 mt-0.5 leading-tight">{{ toast.msg }}</span>
+            </div>
+        </transition-group>
+    </div>
+
+    <!-- 顶部导航栏 -->
+    <header class="bg-slate-900 text-white dark:bg-idea-panel dark:text-idea-text px-4 md:px-6 py-2.5 flex justify-between items-center shrink-0 shadow-md z-20 transition-colors duration-300">
+        <div class="flex items-center gap-3">
+            <button @click="togglePanel('leftDrawer')" class="mobile-only touch-btn flex items-center justify-center w-10 h-10 -ml-2 rounded-lg hover:bg-slate-800 dark:hover:bg-idea-hover transition-colors"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+            <div class="w-8 h-8 bg-indigo-500 dark:bg-idea-button rounded flex items-center justify-center font-bold text-xl shadow shrink-0 text-white">M</div>
+            <h1 class="text-base md:text-lg font-semibold tracking-wide truncate">Mindustry MIT</h1>
+        </div>
+        <div class="flex items-center gap-2 md:gap-3">
+            <button @click="toggleTheme" class="touch-btn flex items-center justify-center w-9 h-9 rounded-lg bg-slate-800 dark:bg-idea-card hover:bg-slate-700 dark:hover:bg-idea-hover transition-colors text-slate-300 dark:text-idea-text" title="切换主题 (跟随系统/手动)">
+                <svg v-if="isDarkMode" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+            </button>
+            <button @click="togglePanel('controlCenter')" class="desktop-only bg-slate-800 dark:bg-idea-card hover:bg-slate-700 dark:hover:bg-idea-hover px-3 py-1.5 rounded text-sm font-medium transition-colors border border-slate-700 dark:border-idea-border flex items-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg><span>控制中心</span>
+            </button>
+            <input type="file" ref="dictFileInput" accept=".json" class="hidden" @change="importDict">
+            <input type="file" ref="weightFileInput" accept=".json" class="hidden" @change="importWeightPack">
+            <input type="file" ref="modFileInput" accept=".zip,.jar" class="hidden" @change="trainWeightFromMod">
+            <input type="file" ref="schemaFileInput" accept=".json" class="hidden" @change="importSchema">
+            <div v-if="connected" class="desktop-only flex items-center gap-2 bg-slate-800 dark:bg-idea-bg px-3 py-1.5 rounded border border-slate-700 dark:border-idea-borderDark transition-colors"><span class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span><span class="text-xs font-medium text-green-400">已连接</span></div>
+        </div>
+    </header>
+
+    <!-- 移动端底部导航 -->
+    <nav v-if="connected" class="mobile-only fixed bottom-0 left-0 right-0 bg-white dark:bg-idea-panel border-t border-slate-200 dark:border-idea-borderDark z-[110] safe-bottom flex justify-around items-center h-14 transition-colors duration-300 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+        <button @click="togglePanel('leftDrawer')" :class="['mobile-nav-item touch-btn flex-1 flex flex-col items-center justify-center gap-0.5 text-slate-500 dark:text-idea-textMuted transition-colors', { 'text-indigo-600 dark:text-idea-keyword active': leftDrawerOpen }]"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg><span class="text-[10px]">添加字段</span></button>
+        <button @click="togglePanel('preview')" :class="['mobile-nav-item touch-btn flex-1 flex flex-col items-center justify-center gap-0.5 text-slate-500 dark:text-idea-textMuted transition-colors', { 'text-indigo-600 dark:text-idea-keyword active': previewOpen }]"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h2m-2 4h10m-10 4h14M4 18h14"/></svg><span class="text-[10px]">结构树</span></button>
+        <button @click="togglePanel('controlCenter')" :class="['mobile-nav-item touch-btn flex-1 flex flex-col items-center justify-center gap-0.5 text-slate-500 dark:text-idea-textMuted transition-colors', { 'text-indigo-600 dark:text-idea-keyword active': controlCenterOpen }]"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/></svg><span class="text-[10px]">控制中心</span></button>
+    </nav>
+
+    <!-- 统一控制中心 (Control Center) 分离遮罩和内容动画 -->
+    <transition name="fade">
+        <div v-if="controlCenterOpen" class="fixed inset-0 z-[90] bg-black/60 backdrop-blur-sm" @click="controlCenterOpen = false"></div>
+    </transition>
+    <transition name="slide-up">
+        <div v-if="controlCenterOpen" class="fixed inset-0 z-[90] flex items-end md:items-center justify-center pointer-events-none">
+            <div class="slide-panel pointer-events-auto bg-slate-50 dark:bg-idea-panel w-full md:w-[700px] h-[70vh] md:h-auto md:max-h-[85vh] rounded-t-2xl md:rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-transparent dark:border-idea-borderDark" @click.stop>
+                <div class="px-5 py-4 bg-white dark:bg-idea-card border-b border-slate-200 dark:border-idea-borderDark flex justify-between items-center shrink-0">
+                    <h3 class="text-lg font-bold text-slate-800 dark:text-idea-text flex items-center gap-2"><svg class="w-5 h-5 text-indigo-500 dark:text-idea-keyword" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>控制中心</h3>
+                    <button @click="controlCenterOpen = false" class="touch-btn w-8 h-8 flex items-center justify-center bg-slate-100 dark:bg-idea-bg rounded-full text-slate-500 hover:text-slate-800 dark:text-idea-textMuted dark:hover:text-white transition-colors"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+                </div>
+                <div class="p-4 md:p-6 overflow-y-auto custom-scrollbar flex-1 space-y-6 pb-20 md:pb-6">
+                    
+                    <!-- 模块 0：本地项目管理 -->
+                    <div>
+                        <div class="flex items-center justify-between mb-3 ml-1">
+                            <h4 class="text-xs font-bold text-slate-400 dark:text-idea-textMuted uppercase tracking-wider">本地项目 (Browser Storage)</h4>
+                            <button @click="saveProjectToDb" class="text-xs bg-indigo-50 dark:bg-idea-button/20 text-indigo-600 dark:text-idea-keyword px-2 py-1 rounded hover:bg-indigo-100 dark:hover:bg-idea-button/40 transition-colors flex items-center gap-1">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/></svg> 保存当前
+                            </button>
+                        </div>
+                        <div class="space-y-2 max-h-[180px] overflow-y-auto custom-scrollbar pr-1">
+                            <div v-if="localProjects.length === 0" class="text-center py-5 text-xs text-slate-400 dark:text-idea-textMuted border border-dashed border-slate-200 dark:border-idea-borderDark rounded-lg">暂无本地保存的项目，点击右上角保存当前实例。</div>
+                            <div v-for="proj in localProjects" :key="proj.id" class="flex items-center justify-between p-3 bg-white dark:bg-idea-card rounded-lg border border-slate-200 dark:border-idea-border shadow-sm group">
+                                <div class="flex flex-col min-w-0">
+                                    <span class="text-sm font-bold text-slate-700 dark:text-idea-text truncate">{{ proj.name }}</span>
+                                    <span class="text-[10px] text-slate-400 dark:text-idea-textMuted mt-0.5">{{ new Date(proj.time).toLocaleString() }} - 类型: {{ proj.className }}</span>
+                                </div>
+                                <div class="flex gap-1 opacity-50 group-hover:opacity-100 transition-opacity shrink-0">
+                                    <button @click="loadProjectFromDb(proj)" class="p-1.5 text-indigo-500 hover:bg-indigo-50 dark:hover:bg-idea-selection rounded transition-colors" title="加载"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg></button>
+                                    <button @click="deleteProjectFromDb(proj.id)" class="p-1.5 text-red-400 hover:bg-red-50 dark:hover:bg-idea-danger/20 rounded transition-colors" title="删除"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 模块 1：扩展与自定义 -->
+                    <div>
+                        <h4 class="text-xs font-bold text-slate-400 dark:text-idea-textMuted uppercase tracking-wider mb-3 ml-1">自定义模型 (Schema)</h4>
+                        <div class="grid grid-cols-1 gap-3">
+                            <button @click="openSchemaConsole" class="flex items-center justify-between p-4 bg-white dark:bg-idea-card rounded-xl border border-indigo-200 dark:border-idea-border hover:border-indigo-400 dark:hover:border-idea-button transition-colors shadow-sm group">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-md bg-indigo-50 dark:bg-idea-button/20 text-indigo-600 dark:text-idea-keyword flex items-center justify-center group-hover:scale-110 transition-transform"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg></div>
+                                    <div class="text-left">
+                                        <div class="text-sm font-bold text-slate-700 dark:text-idea-text">打开 Schema 控制台</div>
+                                        <div class="text-[11px] text-slate-400 dark:text-idea-textMuted mt-0.5">集中管理、定义新类、扩展现有字段</div>
+                                    </div>
+                                </div>
+                                <svg class="w-5 h-5 text-slate-300 dark:text-idea-textMuted group-hover:text-indigo-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 模块 2：语言包 -->
+                    <div>
+                        <h4 class="text-xs font-bold text-slate-400 dark:text-idea-textMuted uppercase tracking-wider mb-3 ml-1">语言包管理 (I18N)</h4>
+                        <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+                            <button @click="generateFullDict(); controlCenterOpen = false" class="col-span-2 md:col-span-1 py-2 px-3 bg-white dark:bg-idea-card rounded-lg border border-slate-200 dark:border-idea-border text-sm font-medium text-slate-700 dark:text-idea-text hover:bg-slate-50 dark:hover:bg-idea-hover transition-colors">生成完整包</button>
+                            <button @click="restoreBuiltinDict(); controlCenterOpen = false" class="py-2 px-3 bg-indigo-50 dark:bg-idea-button/20 rounded-lg border border-indigo-200 dark:border-idea-button/40 text-sm text-indigo-600 dark:text-idea-keyword hover:bg-indigo-100 dark:hover:bg-idea-button/30 transition-colors">内置默认</button>
+                            <button @click="$refs.dictFileInput.click(); controlCenterOpen = false" class="py-2 px-3 bg-white dark:bg-idea-card rounded-lg border border-slate-200 dark:border-idea-border text-sm text-slate-600 dark:text-idea-text hover:bg-slate-50 dark:hover:bg-idea-hover transition-colors">导入</button>
+                            <button @click="exportDict(); controlCenterOpen = false" class="py-2 px-3 bg-white dark:bg-idea-card rounded-lg border border-slate-200 dark:border-idea-border text-sm text-slate-600 dark:text-idea-text hover:bg-slate-50 dark:hover:bg-idea-hover transition-colors">导出</button>
+                            <button @click="resetDict(); controlCenterOpen = false" class="py-2 px-3 bg-white dark:bg-idea-card rounded-lg border border-red-200 dark:border-idea-danger/30 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-idea-danger/10 transition-colors">重置</button>
+                        </div>
+                    </div>
+
+                    <!-- 模块 3：权重包 -->
+                    <div>
+                        <h4 class="text-xs font-bold text-slate-400 dark:text-idea-textMuted uppercase tracking-wider mb-3 ml-1">权重配置 (Weight)</h4>
+                        <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+                            <button @click="$refs.modFileInput.click(); controlCenterOpen = false" class="col-span-2 md:col-span-1 py-2 px-3 bg-white dark:bg-idea-card rounded-lg border border-slate-200 dark:border-idea-border text-sm font-medium text-slate-700 dark:text-idea-text hover:bg-slate-50 dark:hover:bg-idea-hover transition-colors">从模组训练</button>
+                            <button @click="generateFullWeightPack(); controlCenterOpen = false" class="py-2 px-3 bg-white dark:bg-idea-card rounded-lg border border-slate-200 dark:border-idea-border text-sm text-slate-600 dark:text-idea-text hover:bg-slate-50 dark:hover:bg-idea-hover transition-colors">生成包</button>
+                            <button @click="restoreBuiltinWeightPack(); controlCenterOpen = false" class="py-2 px-3 bg-indigo-50 dark:bg-idea-button/20 rounded-lg border border-indigo-200 dark:border-idea-button/40 text-sm text-indigo-600 dark:text-idea-keyword hover:bg-indigo-100 dark:hover:bg-idea-button/30 transition-colors">内置默认</button>
+                            <button @click="$refs.weightFileInput.click(); controlCenterOpen = false" class="py-2 px-3 bg-white dark:bg-idea-card rounded-lg border border-slate-200 dark:border-idea-border text-sm text-slate-600 dark:text-idea-text hover:bg-slate-50 dark:hover:bg-idea-hover transition-colors">导入</button>
+                            <button @click="exportWeightPack(); controlCenterOpen = false" class="py-2 px-3 bg-white dark:bg-idea-card rounded-lg border border-slate-200 dark:border-idea-border text-sm text-slate-600 dark:text-idea-text hover:bg-slate-50 dark:hover:bg-idea-hover transition-colors">导出</button>
+                        </div>
+                    </div>
+
+                    <!-- 模块 4：文件工程 -->
+                    <div>
+                        <h4 class="text-xs font-bold text-slate-400 dark:text-idea-textMuted uppercase tracking-wider mb-3 ml-1">文件工程与视图</h4>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            <button @click="showImportDialog(); controlCenterOpen = false" class="py-2 px-3 bg-white dark:bg-idea-card rounded-lg border border-slate-200 dark:border-idea-border text-sm text-slate-600 dark:text-idea-text hover:bg-slate-50 dark:hover:bg-idea-hover transition-colors">导入 JSON</button>
+                            <button @click="exportJsonFile(); controlCenterOpen = false" class="py-2 px-3 bg-white dark:bg-idea-card rounded-lg border border-slate-200 dark:border-idea-border text-sm text-slate-600 dark:text-idea-text hover:bg-slate-50 dark:hover:bg-idea-hover transition-colors">导出 JSON</button>
+                            <button @click="collapseAll(); controlCenterOpen = false" :disabled="workspaceMode !== 'instance'" class="py-2 px-3 bg-white dark:bg-idea-card rounded-lg border border-slate-200 dark:border-idea-border text-sm text-slate-600 dark:text-idea-text hover:bg-slate-50 dark:hover:bg-idea-hover disabled:opacity-50 transition-colors">全部折叠</button>
+                            <button @click="expandAll(); controlCenterOpen = false" :disabled="workspaceMode !== 'instance'" class="py-2 px-3 bg-white dark:bg-idea-card rounded-lg border border-slate-200 dark:border-idea-border text-sm text-slate-600 dark:text-idea-text hover:bg-slate-50 dark:hover:bg-idea-hover disabled:opacity-50 transition-colors">全部展开</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </transition>
+
+    <!-- ========================================== -->
+    <!-- Schema 控制台 (Schema Console Modal) 分离动画 -->
+    <!-- ========================================== -->
+    <transition name="fade">
+        <div v-if="schemaConsoleOpen" class="fixed inset-0 z-[90] bg-black/60 backdrop-blur-sm" @click="schemaConsoleOpen = false"></div>
+    </transition>
+    <transition name="slide-up">
+        <div v-if="schemaConsoleOpen" class="fixed inset-0 z-[90] flex items-end md:items-center justify-center pointer-events-none">
+            <div class="slide-panel pointer-events-auto bg-slate-50 dark:bg-idea-panel w-full max-w-3xl h-[75vh] md:h-[85vh] rounded-t-2xl md:rounded-2xl shadow-2xl flex flex-col border border-transparent dark:border-idea-borderDark overflow-hidden" @click.stop>
+
+                <div class="px-5 py-4 bg-white dark:bg-idea-card border-b border-slate-200 dark:border-idea-borderDark flex justify-between items-center shrink-0">
+                    <div class="flex items-center gap-3">
+                        <h3 class="text-lg font-bold text-slate-800 dark:text-idea-text flex items-center gap-2">
+                            <svg class="w-5 h-5 text-indigo-500 dark:text-idea-keyword" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+                            Schema 控制台
+                        </h3>
+                        <div class="flex bg-slate-100 dark:bg-idea-bg rounded-lg p-0.5">
+                            <button @click="schemaConsoleTab = 'classes'" :class="{'bg-white dark:bg-idea-card shadow-sm text-slate-800 dark:text-idea-text': schemaConsoleTab === 'classes', 'text-slate-500 hover:text-slate-700 dark:text-idea-textMuted': schemaConsoleTab !== 'classes'}" class="px-3 py-1.5 text-xs font-medium rounded-md transition-all">自定义类</button>
+                            <button @click="schemaConsoleTab = 'fields'" :class="{'bg-white dark:bg-idea-card shadow-sm text-slate-800 dark:text-idea-text': schemaConsoleTab === 'fields', 'text-slate-500 hover:text-slate-700 dark:text-idea-textMuted': schemaConsoleTab !== 'fields'}" class="px-3 py-1.5 text-xs font-medium rounded-md transition-all">扩展字段</button>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button @click="$refs.schemaFileInput.click()" class="text-xs text-slate-600 dark:text-idea-text hover:bg-slate-100 dark:hover:bg-idea-hover px-2 py-1.5 rounded transition-colors" title="导入">导入</button>
+                        <button @click="exportSchema" class="text-xs text-slate-600 dark:text-idea-text hover:bg-slate-100 dark:hover:bg-idea-hover px-2 py-1.5 rounded transition-colors" title="导出">导出</button>
+                        <div class="w-px h-4 bg-slate-200 dark:bg-idea-border mx-1"></div>
+                        <button @click="schemaConsoleOpen = false" class="touch-btn w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:text-idea-textMuted dark:hover:text-white transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+                    </div>
+                </div>
+
+                <div class="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-6 bg-slate-50 dark:bg-idea-panel">
+
+                    <div v-if="schemaConsoleTab === 'classes'" class="space-y-4">
+                        <button @click="startSchemaBuilder" class="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-indigo-200 dark:border-idea-border rounded-xl text-indigo-600 dark:text-idea-keyword hover:bg-indigo-50 dark:hover:bg-idea-hover transition-colors font-medium text-sm">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg> 定义新 Class
+                        </button>
+
+                        <div v-if="customClasses.length === 0" class="text-center py-10 text-slate-400 dark:text-idea-textMuted text-sm">暂无自定义类</div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div v-for="c in customClasses" :key="c" class="bg-white dark:bg-idea-card border border-slate-200 dark:border-idea-border rounded-xl p-4 shadow-sm hover:border-indigo-300 dark:hover:border-idea-button transition-colors group">
+                                <div class="flex justify-between items-start mb-2">
+                                    <div class="font-mono font-bold text-slate-800 dark:text-idea-text break-all">{{ c }}</div>
+                                    <div class="flex gap-1 opacity-50 group-hover:opacity-100 transition-opacity">
+                                        <button @click="editSchemaClass(c)" class="p-1 text-indigo-500 hover:bg-indigo-50 dark:hover:bg-idea-selection rounded" title="编辑"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
+                                        <button @click="deleteCustomClass(c)" class="p-1 text-red-400 hover:bg-red-50 dark:hover:bg-idea-danger/20 rounded" title="删除"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
+                                    </div>
+                                </div>
+                                <div class="text-xs text-slate-500 dark:text-idea-textMuted">extends {{ customClassesData[c]?.parentType || 'Object' }}</div>
+                                <div class="text-xs text-slate-400 dark:text-idea-textMuted mt-1">{{ customClassesData[c]?.fields?.length || 0 }} 个字段</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-if="schemaConsoleTab === 'fields'" class="space-y-4">
+                        <button @click="openExtendClassModal" class="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-indigo-200 dark:border-idea-border rounded-xl text-indigo-600 dark:text-idea-keyword hover:bg-indigo-50 dark:hover:bg-idea-hover transition-colors font-medium text-sm">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg> 扩展现有类
+                        </button>
+
+                        <div v-if="customFields.length === 0" class="text-center py-10 text-slate-400 dark:text-idea-textMuted text-sm">暂无扩展字段</div>
+
+                        <div class="space-y-2">
+                            <div v-for="f in customFields" :key="f.id" class="flex items-center justify-between bg-white dark:bg-idea-card border border-slate-200 dark:border-idea-border rounded-lg p-3 shadow-sm group">
+                                <div class="flex flex-col min-w-0">
+                                    <div class="font-mono text-sm text-slate-800 dark:text-idea-text truncate">
+                                        <span class="text-slate-400 dark:text-idea-textMuted">{{ f.targetClass }}.</span><span class="font-bold">{{ f.fieldName }}</span>
+                                    </div>
+                                    <div class="text-xs text-slate-500 dark:text-idea-textMuted mt-0.5 flex gap-2">
+                                        <span>Type: <span class="text-indigo-500 dark:text-idea-keyword">{{ f.fieldType }}</span></span>
+                                        <span v-if="f.defaultValue">Def: "{{ f.defaultValue }}"</span>
+                                    </div>
+                                </div>
+                                <button @click="deleteCustomField(f.id)" class="p-2 text-red-400 hover:bg-red-50 dark:hover:bg-idea-danger/20 rounded opacity-50 group-hover:opacity-100 transition-all shrink-0" title="删除">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </transition>
+
+    <!-- 移动端左侧抽屉 -->
+    <div class="drawer-overlay mobile-only" :class="{ open: leftDrawerOpen }" @click="leftDrawerOpen = false"></div>
+    <div class="drawer-panel mobile-only" :class="{ open: leftDrawerOpen }">
+            <div class="p-4 border-b border-slate-100 dark:border-idea-borderDark bg-slate-50 dark:bg-idea-card flex items-center justify-between transition-colors">
+                <label class="block text-xs font-bold text-slate-500 dark:text-idea-textMuted uppercase tracking-wider">选择内容类型</label>
+                <button @click="leftDrawerOpen = false" class="touch-btn w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-200 dark:hover:bg-idea-hover text-slate-500 dark:text-idea-textMuted transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+            </div>
+            <div class="p-4 pb-2 border-b border-slate-100 dark:border-idea-borderDark bg-white dark:bg-idea-panel transition-colors space-y-2">
+                <button @click="openTypeSelector(false).then(c => { if(c) selectAndCreateClass(c); leftDrawerOpen = false; })" class="touch-btn w-full bg-slate-800 dark:bg-idea-button hover:bg-slate-700 dark:hover:bg-idea-buttonHover text-white px-4 py-2.5 rounded-md text-sm font-medium transition-colors shadow-sm flex justify-between items-center">
+                    <span>{{ classId !== null ? '切换类型 (' + selectedClass + ')' : '选择类型并创建' }}</span>
+                </button>
+            </div>
+            <div class="flex-1 flex flex-col overflow-hidden bg-white dark:bg-idea-panel transition-colors" v-if="classId !== null && workspaceMode === 'instance'">
+                <div class="p-4 pb-2"><input v-model="searchQuery" placeholder="搜索字段 (如 health)..." class="touch-input w-full border border-slate-300 dark:border-idea-border rounded-md px-3 py-2 text-sm focus:border-indigo-500 dark:focus:border-idea-button outline-none bg-slate-50 dark:bg-idea-bg text-slate-800 dark:text-idea-text placeholder-slate-400 dark:placeholder-idea-textMuted transition-colors"></div>
+                <ul class="flex-1 min-h-0 overflow-y-auto px-2 pb-4 space-y-1 custom-scrollbar">
+                    <li v-for="field in filteredFields" :key="field.name">
+                        <button @click="addFieldToRoot(field); leftDrawerOpen = false" class="w-full text-left px-3 py-2 rounded-lg text-sm text-slate-600 dark:text-idea-text hover:bg-slate-50 dark:hover:bg-idea-selection hover:text-indigo-600 dark:hover:text-idea-keyword transition-colors flex flex-col group">
+                            <div class="flex justify-between items-start w-full min-w-0 gap-2">
+                                <span class="font-bold text-slate-700 dark:text-idea-field group-hover:text-indigo-600 dark:group-hover:text-idea-keyword font-mono break-all transition-colors">{{ field.displayName }}</span>
+                                <span class="text-[10px] text-slate-400 dark:text-idea-textMuted font-mono shrink-0">{{ field.type }}</span>
+                            </div>
+                            <span class="text-xs text-slate-400 dark:text-idea-textMuted mt-1 w-full block break-words whitespace-normal leading-snug">{{ field.doc }}</span>
+                            <span v-if="field.displayName !== field.name" class="text-[10px] text-slate-300 dark:text-[#4b4d4d] mt-0.5 font-mono">{{ field.name }}</span>
+                        </button>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+    <!-- 各种进度模态框 -->
+    <transition name="modal"><div v-if="isGeneratingDict" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-[80] flex items-center justify-center p-4 transition-colors"><div class="modal-content bg-white dark:bg-idea-panel rounded-xl shadow-2xl p-6 w-full max-w-md flex flex-col border border-transparent dark:border-idea-borderDark transition-colors text-center"><div class="my-4"><svg class="animate-spin h-12 w-12 text-indigo-600 dark:text-idea-keyword mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><h3 class="text-lg font-bold text-slate-800 dark:text-idea-text mb-1">正在生成完整本地语言包</h3><div class="w-full bg-slate-200 dark:bg-idea-bg rounded-full h-2.5 overflow-hidden mb-2"><div class="bg-indigo-600 dark:bg-idea-button h-2.5 rounded-full transition-all duration-200" :style="{ width: dictProgress + '%' }"></div></div><div class="flex justify-between text-xs text-slate-500 dark:text-idea-textMuted font-mono"><span>{{ dictCurrentTask }}</span><span>{{ dictProgress }}%</span></div></div></div></div></transition>
+    <transition name="modal"><div v-if="isImportingDict" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-[80] flex items-center justify-center p-4"><div class="modal-content bg-white dark:bg-idea-panel rounded-xl shadow-2xl p-6 w-full max-w-md text-center border border-transparent dark:border-idea-borderDark"><svg class="animate-spin h-12 w-12 text-indigo-600 dark:text-idea-keyword mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><h3 class="text-lg font-bold text-slate-800 dark:text-idea-text mb-1">正在导入语言包</h3><div class="w-full bg-slate-200 dark:bg-idea-bg rounded-full h-2.5 overflow-hidden mb-2"><div class="bg-indigo-600 dark:bg-idea-button h-2.5 rounded-full" :style="{ width: importDictProgress + '%' }"></div></div><div class="text-xs text-slate-500 dark:text-idea-textMuted text-right">{{ importDictProgress }}%</div></div></div></transition>
+    <transition name="modal"><div v-if="isGeneratingWeight" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-[80] flex items-center justify-center p-4"><div class="modal-content bg-white dark:bg-idea-panel rounded-xl shadow-2xl p-6 w-full max-w-md text-center border border-transparent dark:border-idea-borderDark"><svg class="animate-spin h-12 w-12 text-indigo-600 dark:text-idea-keyword mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><h3 class="text-lg font-bold text-slate-800 dark:text-idea-text mb-1">正在生成权重包</h3><div class="w-full bg-slate-200 dark:bg-idea-bg rounded-full h-2.5 overflow-hidden mb-2"><div class="bg-indigo-600 dark:bg-idea-button h-2.5 rounded-full" :style="{ width: weightProgress + '%' }"></div></div><div class="flex justify-between text-xs text-slate-500 dark:text-idea-textMuted font-mono"><span>{{ weightCurrentTask }}</span><span>{{ weightProgress }}%</span></div></div></div></transition>
+    <transition name="modal"><div v-if="isImportingWeight" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-[80] flex items-center justify-center p-4"><div class="modal-content bg-white dark:bg-idea-panel rounded-xl shadow-2xl p-6 w-full max-w-md text-center border border-transparent dark:border-idea-borderDark"><svg class="animate-spin h-12 w-12 text-indigo-600 dark:text-idea-keyword mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><h3 class="text-lg font-bold text-slate-800 dark:text-idea-text mb-1">正在导入权重包</h3><div class="w-full bg-slate-200 dark:bg-idea-bg rounded-full h-2.5 overflow-hidden mb-2"><div class="bg-indigo-600 dark:bg-idea-button h-2.5 rounded-full" :style="{ width: importWeightProgress + '%' }"></div></div><div class="text-xs text-slate-500 dark:text-idea-textMuted text-right">{{ importWeightProgress }}%</div></div></div></transition>
+    <transition name="modal"><div v-if="isTrainingWeight" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-[80] flex items-center justify-center p-4"><div class="modal-content bg-white dark:bg-idea-panel rounded-xl shadow-2xl p-6 w-full max-w-md text-center border border-transparent dark:border-idea-borderDark"><svg class="animate-spin h-12 w-12 text-indigo-600 dark:text-idea-keyword mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><h3 class="text-lg font-bold text-slate-800 dark:text-idea-text mb-1">正在从模组训练权重</h3><div class="w-full bg-slate-200 dark:bg-idea-bg rounded-full h-2.5 overflow-hidden mb-2"><div class="bg-indigo-600 dark:bg-idea-button h-2.5 rounded-full" :style="{ width: trainingProgress + '%' }"></div></div><div class="flex justify-between text-xs text-slate-500 dark:text-idea-textMuted font-mono"><span>{{ trainingCurrentTask }}</span><span>{{ trainingProgress }}%</span></div></div></div></transition>
+
+    <!-- 全局类型/类选择器 (Type Selector Modal) -->
+    <transition name="modal">
+        <div v-if="typeSelectorOpen" class="fixed inset-0 bg-black/50 dark:bg-black/60 backdrop-blur-sm z-[90] flex items-center justify-center p-4 transition-colors" @click.stop="closeTypeSelector">
+            <div class="modal-content bg-white dark:bg-idea-panel rounded-xl shadow-2xl p-4 md:p-6 w-full max-w-[550px] max-h-[80vh] flex flex-col border border-transparent dark:border-idea-borderDark transition-colors" @click.stop>
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-bold text-slate-800 dark:text-idea-text">选择类型</h3>
+                    <button @click="closeTypeSelector" class="text-slate-400 dark:text-idea-textMuted hover:text-slate-600 touch-btn flex items-center justify-center transition-colors"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+                </div>
+                <input v-model="typeSelectorQuery" placeholder="搜索类型名或描述..." class="touch-input w-full border border-slate-300 dark:border-idea-border rounded-lg px-3 py-2 text-sm focus:border-indigo-500 outline-none bg-slate-50 dark:bg-idea-bg text-slate-800 dark:text-idea-text mb-3 transition-colors">
+                <div v-if="filteredTypeSelectorItems.length === 0" class="flex-1 flex items-center justify-center py-12 text-slate-400 dark:text-idea-textMuted text-sm">无匹配类型</div>
+                <div v-else class="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                    <div v-for="item in filteredTypeSelectorItems" :key="item.name" @click="handleTypeSelect(item.name)" class="p-3 rounded-lg border border-slate-200 dark:border-idea-border hover:border-indigo-300 hover:bg-slate-50 dark:hover:bg-idea-selection cursor-pointer transition-all flex flex-col gap-1">
+                        <div class="flex justify-between items-start gap-2">
+                            <span class="font-mono font-bold text-slate-700 dark:text-idea-field text-sm break-all" :class="{'text-indigo-600 dark:text-idea-keyword': item._isBasic, 'text-slate-400 italic': item.name === ''}">{{ item.displayName }}</span>
+                            <span v-if="item.name !== ''" class="text-[10px] px-1.5 py-0.5 rounded font-mono shrink-0 bg-slate-100 dark:bg-idea-bg text-slate-500">{{ item._isBasic ? '基础/系统' : 'Class' }}</span>
+                        </div>
+                        <p class="text-xs text-slate-500 dark:text-idea-textMuted leading-relaxed break-words">{{ item.doc || '暂无描述' }}</p>
+                        <span v-if="item.displayName !== item.name && item.name !== ''" class="text-[10px] text-slate-400 font-mono">{{ item.name }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </transition>
+
+    <transition name="modal"><div v-if="importDialogVisible" class="fixed inset-0 bg-black/50 dark:bg-black/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4 transition-colors"><div class="modal-content bg-white dark:bg-idea-panel rounded-xl shadow-2xl p-4 md:p-6 w-full max-w-[480px] border border-transparent dark:border-idea-borderDark transition-colors"><h3 class="text-lg md:text-xl font-bold text-slate-800 dark:text-idea-text mb-4">导入 JSON</h3><p class="text-sm text-slate-500 dark:text-idea-textMuted mb-4">选择之前导出的 JSON 文件，将自动解析并恢复编辑状态。</p><label :class="['flex flex-col items-center justify-center w-full h-28 border-2 border-dashed rounded-lg cursor-pointer transition-colors', importing ? 'opacity-50 pointer-events-none border-slate-300 dark:border-idea-border' : 'border-indigo-300 dark:border-idea-border hover:border-indigo-500 dark:hover:border-indigo-400']"><span class="text-sm text-slate-500 dark:text-idea-textMuted">点击选择 .json 文件</span><input type="file" accept=".json" class="hidden" :disabled="importing" @change="importClass"></label><div v-if="importing" class="mt-3"><div class="w-full bg-slate-200 dark:bg-idea-bg rounded-full h-2 overflow-hidden"><div class="bg-indigo-500 h-2 rounded-full transition-all duration-300" :style="{ width: importProgress + '%' }"></div></div></div><div class="flex justify-end mt-4"><button @click="importDialogVisible = false" :disabled="importing" class="touch-btn px-4 py-2 rounded text-sm text-slate-600 dark:text-idea-text hover:bg-slate-100 dark:hover:bg-idea-hover transition-colors">取消</button></div></div></div></transition>
+
+
+
+    <!-- 主体内容 -->
+    <main class="flex-1 flex overflow-hidden relative">
+
+        <aside class="desktop-only w-72 bg-white dark:bg-idea-panel border-r border-slate-200 dark:border-idea-borderDark flex flex-col shadow-sm z-0 transition-colors duration-300">
+            <div class="p-4 border-b border-slate-100 dark:border-idea-borderDark bg-slate-50 dark:bg-idea-card transition-colors space-y-2">
+                <button @click="openTypeSelector(false).then(c => { if(c) selectAndCreateClass(c); })" class="w-full bg-slate-800 dark:bg-idea-button hover:bg-slate-700 text-white px-4 py-2.5 rounded-md text-sm font-medium transition-colors shadow-sm flex justify-between items-center">
+                    <span>{{ classId !== null ? '切换类型 (' + selectedClass + ')' : '选择类型并创建' }}</span>
+                </button>
+            </div>
+            <div class="flex-1 flex flex-col overflow-hidden" v-if="classId !== null && workspaceMode === 'instance'">
+                <div class="p-3"><input v-model="searchQuery" placeholder="搜索字段..." class="w-full border border-slate-300 dark:border-idea-border rounded-md px-3 py-2 text-sm focus:border-indigo-500 outline-none bg-slate-50 dark:bg-idea-bg text-slate-800 dark:text-idea-text transition-colors"></div>
+                <ul class="flex-1 min-h-0 overflow-y-auto px-2 pb-4 space-y-1 custom-scrollbar">
+                    <li v-for="field in filteredFields" :key="field.name">
+                        <button @click="addFieldToRoot(field)" class="w-full text-left px-3 py-2 rounded-lg text-sm text-slate-600 dark:text-idea-text hover:bg-slate-100 dark:hover:bg-idea-selection hover:text-indigo-600 dark:hover:text-idea-keyword transition-colors flex flex-col group">
+                            <div class="flex justify-between items-start w-full min-w-0 gap-2"><span class="font-bold text-slate-700 dark:text-idea-field group-hover:text-indigo-600 dark:group-hover:text-idea-keyword font-mono break-all transition-colors">{{ field.displayName }}</span></div>
+                            <span class="text-xs text-slate-400 dark:text-idea-textMuted mt-1 w-full block break-words whitespace-normal leading-snug">{{ field.doc }}</span>
+                        </button>
+                    </li>
+                </ul>
+            </div>
+        </aside>
+
+        <section class="main-section flex-1 bg-white dark:bg-idea-bg relative overflow-y-auto transition-colors duration-300 custom-scrollbar">
+            <div class="py-4 px-2 md:p-8 max-w-5xl mx-auto w-full">
+                <div v-if="workspaceMode === 'instance'">
+                    <div v-if="classId === null" class="text-center text-slate-400 dark:text-idea-textMuted mt-32 transition-colors"><p class="text-lg">请先在左侧选择类型并创建实例</p></div>
+                    <div v-else-if="isLoadingFields" class="text-center text-slate-400 dark:text-idea-textMuted mt-32 transition-colors"><svg class="animate-spin h-10 w-10 text-indigo-500 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><p class="text-lg">正在加载字段...</p><p class="text-xs text-slate-400 mt-1">{{ selectedClass }}</p></div>
+                    <div v-else>
+                        <div class="flex justify-between items-end mb-4 border-b border-slate-200 dark:border-idea-borderDark pb-2 transition-colors">
+                            <div class="min-w-0 pl-2"><h2 class="text-lg md:text-xl font-bold text-slate-800 dark:text-idea-text transition-colors font-mono">{{ selectedClass }} <span class="text-xs font-normal text-slate-400">ID: {{ classId }}</span></h2></div>
+                            <div class="desktop-only flex gap-2 shrink-0 ml-2"><button @click="collapseAll" class="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-idea-text transition-colors">全部折叠</button><button @click="expandAll" class="text-xs text-indigo-500 hover:text-indigo-700 transition-colors">全部展开</button></div>
+                        </div>
+                        <div class="json-font pl-1 md:pl-2"><div class="json-bracket mb-1">{</div><div class="json-indent"><transition-group name="node" tag="div" class="relative"><editor-node v-for="(node, index) in rootNodes" :key="node.id" :node="node" :class-id="classId" @remove="removeRootNode(index)"></editor-node></transition-group><div v-if="rootNodes.length === 0" class="json-comment py-1 select-none opacity-50">// 暂无属性，请从左侧面板添加</div></div><div class="json-bracket mt-1">}</div></div>
+                    </div>
+                </div>
+
+                <div v-else-if="workspaceMode === 'schema'">
+                    <div class="flex justify-between items-end mb-4 border-b border-slate-200 dark:border-idea-borderDark pb-2 transition-colors">
+                        <div class="min-w-0 pl-2"><h2 class="text-lg md:text-xl font-bold text-slate-800 dark:text-idea-text transition-colors font-mono">Schema Builder <span class="text-xs font-normal text-slate-400 dark:text-idea-textMuted ml-2">设计自定义类</span></h2></div>
+                        <div class="flex gap-2 shrink-0 ml-2"><button @click="workspaceMode = 'instance'" class="text-xs text-slate-500 hover:text-slate-800 dark:text-idea-textMuted dark:hover:text-idea-text px-2 py-1 transition-colors">取消</button><button @click="saveAndRegisterSchema" class="text-xs bg-indigo-600 dark:bg-idea-button text-white hover:bg-indigo-700 dark:hover:bg-idea-buttonHover px-3 py-1.5 rounded font-bold shadow-sm transition-colors">保存并注册</button></div>
+                    </div>
+                    <div class="json-font pl-1 md:pl-2">
+                        <div class="json-comment mb-1 select-none">// 点击字符串或注释即可修改内容</div>
+                        <div class="json-bracket mb-1">{</div>
+                        <div class="json-indent">
+                            <div class="json-row pr-2 group/node"><span class="json-key cursor-pointer" @click="editSchemaMeta('className')">"$className"</span><span class="json-bracket mx-0.5">:</span><span class="json-string cursor-pointer" @click="editSchemaMeta('className')">"{{schemaDraft.className}}"</span></div>
+                            <div class="json-row pr-2 group/node"><span class="json-key cursor-pointer" @click="openTypeSelector(false).then(c => { if(c!==null) schemaDraft.parentType = c; })">"$extends"</span><span class="json-bracket mx-0.5">:</span><span class="json-string cursor-pointer" @click="openTypeSelector(false).then(c => { if(c!==null) schemaDraft.parentType = c; })">"{{schemaDraft.parentType || 'Object'}}"</span><span v-if="!schemaDraft.parentType" class="text-[10px] text-slate-400 ml-2">(无父类)</span></div>
+                            <div class="json-row pr-2 mt-2"><span class="json-key">"fields"</span><span class="json-bracket mx-0.5">:</span><span class="json-bracket">{</span></div>
+                            <div class="json-indent">
+                                <transition-group name="node" tag="div" class="relative">
+                                    <div v-for="(f, idx) in schemaDraft.fields" :key="f.id" class="json-row pr-2 group/node">
+                                        <span class="json-key cursor-pointer" @click="editSchemaField(idx)">"{{f.name}}"</span><span class="json-bracket mx-0.5">:</span><span class="json-comment cursor-pointer" @click="editSchemaField(idx)">/* type: {{f.type}}, default: {{f.defaultValue || 'null'}} */</span>
+                                        <div class="json-actions flex items-center gap-1.5 shrink-0 ml-auto pl-2"><button @click="schemaDraft.fields.splice(idx, 1)" class="w-6 h-6 flex items-center justify-center text-red-400 hover:text-white hover:bg-red-500 rounded transition-colors" title="删除字段"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></div>
+                                    </div>
+                                </transition-group>
+                                <div class="json-row pr-2 mt-0.5"><span class="json-comment" @click="addSchemaField">+ 添加新字段</span></div>
+                            </div>
+                            <div class="json-row pr-2"><span class="json-bracket">}</span></div>
+                        </div>
+                        <div class="json-bracket mt-1">}</div>
+                    </div>
+                </div>
+                <div v-if="connected && isMobile" class="mobile-workspace-bottom-spacer"></div>
+            </div>
+        </section>
+
+        <!-- 移动端实例树遮罩层 -->
+        <div v-if="connected" class="drawer-overlay preview-backdrop mobile-only mobile-preview-container" :class="{ open: previewOpen }" @click="previewOpen = false"></div>
+        <aside v-if="connected" class="preview-panel w-full md:w-1/3 bg-slate-900 dark:bg-[#1e1e1e] flex flex-col border-l border-slate-800 dark:border-idea-borderDark shadow-2xl" :class="{ open: previewOpen || !isMobile }">
+                <div class="h-12 flex items-center px-4 bg-slate-800 dark:bg-idea-panel border-b border-slate-700 dark:border-idea-borderDark justify-between shrink-0 transition-colors rounded-t-xl md:rounded-none">
+                <div class="flex items-center gap-2"><span class="text-sm font-bold text-slate-200 dark:text-idea-text">{{ workspaceMode === 'schema' ? '类结构预览树' : '实例结构树' }}</span></div>
+                <button @click="previewOpen = false" class="mobile-only touch-btn w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+            </div>
+            <div class="relative flex-1 w-full min-h-0 bg-slate-900 dark:bg-[#1e1e1e]">
+                <div class="absolute inset-0 overflow-y-auto custom-scrollbar p-3 md:p-4 pb-10" style="-webkit-overflow-scrolling: touch; overscroll-behavior: contain;">
+                    <div v-if="workspaceMode === 'instance'">
+                        <div v-if="classId === null" class="text-slate-500 text-sm italic py-4 text-center">暂无实例</div>
+                        <div v-else class="font-mono text-[13px]">
+                            <div class="flex items-center gap-2 mb-1"><span class="text-idea-keyword bg-idea-keyword/10 px-1.5 py-0.5 rounded border border-idea-keyword/20 cursor-default">{{ selectedClass }} <span class="text-slate-500 text-[10px]">#{{ classId }}</span></span></div>
+                            <div class="pl-1 border-l border-slate-700/50 ml-2"><class-tree-node v-for="node in rootNodes" :key="node.id" :node="node" :label="node.key"></class-tree-node></div>
+                        </div>
+                    </div>
+                    <div v-else-if="workspaceMode === 'schema'">
+                        <div class="font-mono text-[13px]">
+                            <div class="flex items-center gap-2 mb-1"><span class="text-idea-field bg-idea-field/10 px-1.5 py-0.5 rounded border border-idea-field/20 cursor-default">{{ schemaDraft.className || 'UnnamedClass' }} <span class="text-slate-500 text-[10px]">extends {{ schemaDraft.parentType || 'Object' }}</span></span></div>
+                            <div class="pl-1 border-l border-slate-700/50 ml-2">
+                                <div v-for="f in schemaDraft.fields" :key="f.id" class="flex items-start gap-1 py-0.5 px-1 group/tree"><span class="text-idea-field truncate cursor-default">{{ f.name || 'unnamed' }}</span><span class="text-slate-500 mx-0.5">:</span><span class="text-idea-keyword">{{ f.type }}</span><span v-if="f.defaultValue" class="text-idea-string ml-1"> = "{{ f.defaultValue }}"</span></div>
+                                <div v-if="schemaDraft.fields.length === 0" class="text-slate-500 text-[11px] italic mt-1 ml-1">No fields defined</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            </aside>
+    </main>
+
+    <transition name="modal"><div v-if="schemaMetaEditorOpen" class="fixed inset-0 bg-black/50 dark:bg-black/60 backdrop-blur-sm z-[80] flex items-center justify-center p-4" @click.stop="schemaMetaEditorOpen = false"><div class="modal-content bg-white dark:bg-idea-panel rounded-xl shadow-2xl p-4 md:p-6 w-full max-w-[400px] border border-transparent dark:border-idea-borderDark" @click.stop><h3 class="text-lg font-bold text-slate-800 dark:text-idea-text mb-4">修改类名</h3><input v-model="schemaMetaValue" @keyup.enter="saveSchemaMeta" class="w-full border border-slate-300 dark:border-idea-border rounded-md px-3 py-2 text-sm bg-white dark:bg-idea-bg text-slate-800 dark:text-idea-text focus:border-indigo-500 outline-none mb-4"><div class="flex justify-end gap-2"><button @click="schemaMetaEditorOpen = false" class="px-4 py-2 text-sm text-slate-600 dark:text-idea-text hover:bg-slate-100 dark:hover:bg-idea-hover rounded">取消</button><button @click="saveSchemaMeta" class="px-4 py-2 text-sm bg-indigo-600 dark:bg-idea-button text-white rounded hover:bg-indigo-700">确定</button></div></div></div></transition>
+
+    <!-- 模态框：编辑 Schema 字段属性 -->
+    <transition name="modal">
+        <div v-if="schemaFieldEditorOpen" class="fixed inset-0 bg-black/50 dark:bg-black/60 backdrop-blur-sm z-[80] flex items-center justify-center p-4" @click.stop="schemaFieldEditorOpen = false">
+            <div class="modal-content bg-white dark:bg-idea-panel rounded-xl shadow-2xl p-4 md:p-6 w-full max-w-[450px] border border-transparent dark:border-idea-borderDark" @click.stop>
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-bold text-slate-800 dark:text-idea-text">配置字段</h3>
+                    <button @click="schemaFieldEditorOpen = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-idea-text"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+                </div>
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-500 dark:text-idea-textMuted mb-1">字段名 (Name)</label>
+                        <input v-model="schemaFieldForm.name" class="w-full border border-slate-300 dark:border-idea-border rounded-md px-3 py-2 text-sm bg-white dark:bg-idea-bg text-slate-800 dark:text-idea-text outline-none focus:border-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-500 dark:text-idea-textMuted mb-1">类型 (Type)</label>
+                        <button @click="openTypeSelector(true).then(t => { if(t!==null) schemaFieldForm.type = t; })" class="w-full text-left border border-slate-300 dark:border-idea-border rounded-md px-3 py-2 text-sm bg-white dark:bg-idea-bg text-slate-800 dark:text-idea-text hover:bg-slate-50 dark:hover:bg-idea-hover transition-colors">
+                            {{ schemaFieldForm.type || '点击选择类型...' }}
+                        </button>
+                    </div>
+                    <div class="flex items-center gap-2 mt-2">
+                        <input type="checkbox" id="schemaIsArray" v-model="schemaFieldForm.isArray" class="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 bg-white dark:bg-idea-bg">
+                        <label for="schemaIsArray" class="text-sm text-slate-700 dark:text-idea-text cursor-pointer">设为数组/列表 (Array `[]`)</label>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-500 dark:text-idea-textMuted mb-1">默认值 (Default Value)</label>
+                        <input v-model="schemaFieldForm.defaultValue" placeholder="留空则无默认值" class="w-full border border-slate-300 dark:border-idea-border rounded-md px-3 py-2 text-sm bg-white dark:bg-idea-bg text-slate-800 dark:text-idea-text outline-none focus:border-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-500 dark:text-idea-textMuted mb-1">注释/描述 (Notes)</label>
+                        <textarea v-model="schemaFieldForm.notes" rows="2" class="w-full border border-slate-300 dark:border-idea-border rounded-md px-3 py-2 text-sm bg-white dark:bg-idea-bg text-slate-800 dark:text-idea-text outline-none focus:border-indigo-500 resize-none"></textarea>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2 mt-5">
+                    <button @click="schemaFieldEditorOpen = false" class="px-4 py-2 text-sm text-slate-600 dark:text-idea-text hover:bg-slate-100 dark:hover:bg-idea-hover rounded">取消</button>
+                    <button @click="saveSchemaField" class="px-4 py-2 text-sm bg-indigo-600 dark:bg-idea-button text-white rounded hover:bg-indigo-700">保存</button>
+                </div>
+            </div>
+        </div>
+    </transition>
+
+    <!-- 模态框：扩展现有类 (AddField) -->
+    <transition name="modal">
+        <div v-if="extendClassModalOpen" class="fixed inset-0 bg-black/50 dark:bg-black/60 backdrop-blur-sm z-[80] flex items-center justify-center p-4" @click.stop="extendClassModalOpen = false">
+            <div class="modal-content bg-white dark:bg-idea-panel rounded-xl shadow-2xl p-4 md:p-6 w-full max-w-[450px] border border-transparent dark:border-idea-borderDark" @click.stop>
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-bold text-slate-800 dark:text-idea-text flex items-center gap-2">扩展现有类 (AddField)</h3>
+                    <button @click="extendClassModalOpen = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-idea-text"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+                </div>
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-500 dark:text-idea-textMuted mb-1">目标类 (Target Class)</label>
+                        <button @click="openTypeSelector(false).then(c => { if(c!==null) extendFieldForm.targetClass = c; })" class="w-full text-left border border-slate-300 dark:border-idea-border rounded-md px-3 py-2 text-sm bg-white dark:bg-idea-bg text-slate-800 dark:text-idea-text hover:bg-slate-50 dark:hover:bg-idea-hover transition-colors">
+                            {{ extendFieldForm.targetClass || '点击选择目标类...' }}
+                        </button>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-500 dark:text-idea-textMuted mb-1">新增字段名 (Field Name)</label>
+                        <input v-model="extendFieldForm.fieldName" placeholder="例如: customDamage" class="w-full border border-slate-300 dark:border-idea-border rounded-md px-3 py-2 text-sm bg-white dark:bg-idea-bg text-slate-800 dark:text-idea-text outline-none focus:border-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-500 dark:text-idea-textMuted mb-1">字段类型 (Type)</label>
+                        <button @click="openTypeSelector(true).then(t => { if(t!==null) extendFieldForm.type = t; })" class="w-full text-left border border-slate-300 dark:border-idea-border rounded-md px-3 py-2 text-sm bg-white dark:bg-idea-bg text-slate-800 dark:text-idea-text hover:bg-slate-50 dark:hover:bg-idea-hover transition-colors">
+                            {{ extendFieldForm.type || '点击选择类型...' }}
+                        </button>
+                    </div>
+                    <div class="flex items-center gap-2 mt-2">
+                        <input type="checkbox" id="extendIsArray" v-model="extendFieldForm.isArray" class="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 bg-white dark:bg-idea-bg">
+                        <label for="extendIsArray" class="text-sm text-slate-700 dark:text-idea-text cursor-pointer">设为数组/列表 (Array `[]`)</label>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-500 dark:text-idea-textMuted mb-1">默认值 (Default Value)</label>
+                        <input v-model="extendFieldForm.defaultValue" placeholder="留空则无默认值" class="w-full border border-slate-300 dark:border-idea-border rounded-md px-3 py-2 text-sm bg-white dark:bg-idea-bg text-slate-800 dark:text-idea-text outline-none focus:border-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-500 dark:text-idea-textMuted mb-1">注释/描述 (Notes)</label>
+                        <input v-model="extendFieldForm.notes" placeholder="可选" class="w-full border border-slate-300 dark:border-idea-border rounded-md px-3 py-2 text-sm bg-white dark:bg-idea-bg text-slate-800 dark:text-idea-text outline-none focus:border-indigo-500">
+                    </div>
+                    <div class="flex items-center gap-2 mt-2">
+                        <input type="checkbox" id="applySub" v-model="extendFieldForm.applyToSubclasses" class="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 bg-white dark:bg-idea-bg">
+                        <label for="applySub" class="text-sm text-slate-700 dark:text-idea-text cursor-pointer">应用到所有子类</label>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2 mt-5">
+                    <button @click="extendClassModalOpen = false" :disabled="isSavingField" class="px-4 py-2 text-sm text-slate-600 dark:text-idea-text hover:bg-slate-100 dark:hover:bg-idea-hover rounded disabled:opacity-50">取消</button>
+                    <button @click="saveAndApplyCustomField" :disabled="isSavingField" class="px-4 py-2 text-sm bg-indigo-600 dark:bg-idea-button text-white rounded hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"><svg v-if="isSavingField" class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>{{ isSavingField ? '正在保存...' : '扩展字段' }}</button>
+                </div>
+            </div>
+        </div>
+    </transition>
+
+</div>
+
+<template id="class-tree-node-template">
+    <div class="font-mono text-[13px] leading-relaxed">
+        <div class="flex items-start gap-1 py-0.5 hover:bg-slate-800/50 rounded px-1 transition-colors group/tree">
+            <span @click="isOpen = !isOpen" class="cursor-pointer text-slate-500 hover:text-slate-300 w-4 text-center select-none shrink-0" :class="{'invisible': !isExpandable}">{{ isOpen ? '▼' : '▶' }}</span>
+            <span class="text-idea-field truncate cursor-default">{{ label }}</span><span class="text-slate-500 mx-0.5">:</span>
+            <div class="flex-1 min-w-0">
+                <span v-if="node.subclassId" class="text-idea-keyword bg-idea-keyword/10 px-1 rounded border border-idea-keyword/20 select-all">{{ node.subclassType }} <span class="text-slate-500 text-[10px]">#{{ node.subclassId }}</span></span>
+                <span v-else-if="node.isArray" class="text-idea-number cursor-default">Array [{{ node.children.length }}]</span>
+                <span v-else-if="node.value === 'true' || node.value === 'false'" class="truncate block cursor-default" :class="node.value === 'true' ? 'text-indigo-600 dark:text-idea-keyword' : 'text-slate-400 dark:text-idea-textMuted'">{{ node.value }}</span>
+                <span v-else class="text-idea-string truncate block cursor-default">{{ node.value === '' ? 'null' : `"${node.value}"` }}</span>
+            </div>
+        </div>
+        <div class="grid-collapse" :class="{'is-open': isOpen && isExpandable}"><div class="grid-collapse-inner"><div class="ml-2 pl-3 border-l border-slate-700/50"><class-tree-node v-for="child in node.children" :key="child.id" :node="child" :label="child.key"></class-tree-node></div></div></div>
+    </div>
+</template>
+
+<template id="editor-node-template">
+    <div class="json-font relative group/node">
+        <div class="json-row pr-2">
+            <div class="flex items-center justify-center w-4 shrink-0 cursor-pointer select-none text-slate-400 dark:text-idea-textMuted hover:text-indigo-500" @click.stop="toggleCollapse"><svg v-if="canCollapse" :class="['w-3 h-3 transition-transform duration-200', { '-rotate-90': node.collapsed }]" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path></svg></div>
+            <div class="flex items-center shrink-0 cursor-pointer" @click.stop="toggleCollapse" @contextmenu.prevent="showContextMenu" @touchstart="onTouchStart" @touchend="onTouchEnd" @touchmove="onTouchMove" @touchcancel="onTouchCancel"><span class="json-key">{{ node.key }}</span><span class="json-bracket mx-0.5">:</span></div>
+            <div class="flex-1 flex items-center min-w-0 ml-1">
+                <template v-if="displayMode === 'leaf-text'">
+                    <template v-if="isBooleanField">
+                        <button @click="toggleBoolean" :class="['relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-200 focus:outline-none', node.value === 'true' ? 'bg-indigo-600 dark:bg-idea-button' : 'bg-slate-300 dark:bg-slate-600']"><span :class="['inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform duration-200', node.value === 'true' ? 'translate-x-[18px]' : 'translate-x-[3px]']"></span></button>
+                        <span class="text-[11px] ml-1.5" :class="node.value === 'true' ? 'text-indigo-600 dark:text-idea-keyword' : 'text-slate-400 dark:text-idea-textMuted'">{{ node.value === 'true' ? 'true' : 'false' }}</span>
+                        <svg v-if="saving" class="animate-spin h-3 w-3 text-indigo-500 ml-1 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    </template>
+                    <template v-else>
+                        <input type="text" v-model="node.value" @blur="saveValue" @keyup.enter="saveValue" class="json-input json-string" placeholder="null">
+                        <svg v-if="saving" class="animate-spin h-3 w-3 text-indigo-500 ml-1 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    </template>
+                </template>
+                <template v-else-if="displayMode === 'type-select' || displayMode === 'leaf-select'"><span class="json-comment" @click="typeSelectorVisible = true">{{ node.value ? `/* ${node.value} */` : `/* 配置 ${node.fieldType} */` }}</span></template>
+                <template v-else-if="displayMode === 'object' || displayMode === 'array' || displayMode === 'subclass-editing'">
+                    <span class="json-bracket">{{ node.isArray ? '[' : '{' }}</span><template v-if="node.collapsed"><span class="json-bracket text-slate-400 mx-1">...</span><span class="json-bracket">{{ node.isArray ? ']' : '}' }}</span><span class="text-[11px] text-slate-400 dark:text-idea-textMuted ml-3 select-none">{{ collapseSummary }}</span></template>
+                </template>
+                <template v-else-if="displayMode === 'loading'"><span class="text-slate-400 text-[11px] italic">loading...</span></template>
+                <span class="text-[10px] text-slate-300 dark:text-[#4b4d4d] ml-3 opacity-0 group-hover/node:opacity-100 transition-opacity select-none hidden md:inline-block pointer-events-none">{{ node.fieldType }} {{ node.subclassType ? `→ ${node.subclassType}` : '' }}</span>
+            </div>
+            <div class="json-actions flex items-center gap-1.5 shrink-0 ml-auto pl-2"><button v-if="node.isDeletable !== false" @click="handleRemove" :disabled="removing" class="w-6 h-6 flex items-center justify-center text-red-400 hover:text-white hover:bg-red-500 rounded transition-colors disabled:opacity-30" title="删除当前属性"><svg v-if="removing" class="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></div>
+        </div>
+        <div class="grid-collapse" :class="{'is-open': !node.collapsed && (displayMode === 'object' || displayMode === 'array' || displayMode === 'subclass-editing')}">
+            <div class="grid-collapse-inner">
+                <div class="json-indent">
+                    <transition-group name="node" tag="div" class="relative"><editor-node v-for="(child, index) in node.children" :key="child.id" :node="child" :class-id="$props.classId" @remove="removeChild(index)"></editor-node></transition-group>
+                    <div class="json-row pr-2 mt-0.5">
+                        <div class="w-4 shrink-0"></div>
+                        <div v-if="displayMode === 'array'" class="flex-1"><span class="json-comment" @click="addArrayElement">+ 添加元素</span></div>
+                        <div v-else class="flex-1 flex items-center gap-4"><span v-if="!node.expanded && node.children.length === 0" class="json-comment" @click="expandObject">+ 展开/加载属性</span><span v-else class="json-comment" @click="fieldSelectorVisible = true">+ 添加属性</span><span v-if="node.subclassId || (allTypes.length > 0 && node.children.length > 0)" class="text-[11px] text-slate-400 hover:text-red-500 cursor-pointer transition-colors" @click="resetObjectType">[重置类型]</span></div>
+                    </div>
+                </div>
+                <div class="json-row pr-2"><div class="w-4 shrink-0"></div><span class="json-bracket">{{ node.isArray ? ']' : '}' }}</span></div>
+            </div>
+        </div>
+        <transition name="modal"><div v-if="fieldSelectorVisible" class="fixed inset-0 bg-black/50 bg-black/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4 transition-colors" @click.stop="fieldSelectorVisible = false"><div class="modal-content bg-white dark:bg-idea-panel rounded-xl shadow-2xl p-4 md:p-6 w-full max-w-[550px] max-h-[80vh] flex flex-col border border-transparent dark:border-idea-borderDark transition-colors font-sans" @click.stop><div class="flex justify-between items-center mb-4"><h3 class="text-lg font-bold text-slate-800 dark:text-idea-text">添加属性到 {{ node.key }}</h3><button @click="fieldSelectorVisible = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-idea-text touch-btn flex items-center justify-center"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></div><input v-model="fieldSearchQuery" placeholder="搜索属性名、类型..." class="touch-input w-full border border-slate-300 dark:border-idea-border rounded-lg px-3 py-2 text-sm focus:border-indigo-500 outline-none bg-slate-50 dark:bg-idea-bg text-slate-800 dark:text-idea-text mb-3 transition-colors"><div class="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar"><div v-for="f in filteredUncreatedFields" :key="f.name" @click="selectAndCreateField(f)" class="p-3 rounded-lg border border-slate-200 dark:border-idea-border hover:border-indigo-300 hover:bg-slate-50 dark:hover:bg-idea-selection cursor-pointer transition-all flex flex-col gap-1"><div class="flex justify-between items-start gap-2"><span class="font-bold text-slate-700 dark:text-idea-field text-sm break-all">{{ f.displayName }}</span><span class="text-[10px] px-1.5 py-0.5 rounded font-mono shrink-0 bg-slate-100 dark:bg-idea-bg text-slate-500">{{ f.type }}</span></div><p class="text-xs text-slate-500 dark:text-idea-textMuted leading-relaxed break-words">{{ f.doc }}</p><span v-if="f.displayName !== f.name" class="text-[10px] text-slate-400 font-mono">{{ f.name }}</span></div><div v-if="filteredUncreatedFields.length === 0" class="text-center py-8 text-slate-400 text-sm">无可用属性</div></div></div></div></transition>
+        <transition name="modal"><div v-if="typeSelectorVisible" class="fixed inset-0 bg-black/50 bg-black/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4 transition-colors" @click.stop="typeSelectorVisible = false"><div class="modal-content bg-white dark:bg-idea-panel rounded-xl shadow-2xl p-4 md:p-6 w-full max-w-[550px] max-h-[80vh] flex flex-col border border-transparent dark:border-idea-borderDark transition-colors font-sans" @click.stop><div class="flex justify-between items-center mb-4"><h3 class="text-lg font-bold text-slate-800 dark:text-idea-text">配置 {{ node.key }}</h3><button @click="typeSelectorVisible = false" class="text-slate-400 hover:text-slate-600 touch-btn flex items-center justify-center"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></div><div v-if="displayMode === 'type-select' && instanceOptions.length > 0 && allTypes.length > 0" class="flex gap-2 mb-4 border-b border-slate-200 dark:border-idea-borderDark pb-2"><button @click="refMode = 'instance'" :class="{'text-indigo-600 dark:text-idea-keyword border-b-2 border-indigo-600 font-bold': refMode === 'instance', 'text-slate-500': refMode !== 'instance'}" class="px-2 py-1 text-sm transition-colors">使用现有实例</button><button @click="refMode = 'newclass'" :class="{'text-indigo-600 dark:text-idea-keyword border-b-2 border-indigo-600 font-bold': refMode === 'newclass', 'text-slate-500': refMode !== 'newclass'}" class="px-2 py-1 text-sm transition-colors">创建新实例</button></div><div v-if="(displayMode === 'leaf-select') || (displayMode === 'type-select' && refMode === 'instance')" class="flex-1 flex flex-col overflow-hidden"><input v-model="instanceSearchQuery" placeholder="搜索实例..." class="touch-input w-full border border-slate-300 dark:border-idea-border rounded-lg px-3 py-2 text-sm focus:border-indigo-500 outline-none bg-slate-50 dark:bg-idea-bg text-slate-800 dark:text-idea-text mb-3"><div class="flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar"><div v-for="inst in filteredInstances" :key="inst.name" @click="selectInstanceAndSave(inst)" class="px-3 py-2.5 rounded-lg hover:bg-slate-50 dark:hover:bg-idea-selection cursor-pointer flex items-center justify-between group"><span class="font-mono font-bold text-slate-700 dark:text-idea-text text-sm">{{ inst.displayName }}</span><span v-if="inst.displayName !== inst.name" class="text-[10px] text-slate-400 font-mono ml-2">{{ inst.name }}</span></div></div></div><div v-if="displayMode === 'type-select' && refMode === 'newclass'" class="flex-1 flex flex-col overflow-hidden"><input v-model="typeSearchQuery" placeholder="搜索类型名或描述..." class="touch-input w-full border border-slate-300 dark:border-idea-border rounded-lg px-3 py-2 text-sm focus:border-indigo-500 outline-none bg-slate-50 dark:bg-idea-bg text-slate-800 dark:text-idea-text mb-3"><div class="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar"><div v-for="t in filteredTypes" :key="t.name" @click="selectTypeAndCreate(t.name)" class="p-3 rounded-lg border border-slate-200 dark:border-idea-border hover:border-indigo-300 hover:bg-slate-50 dark:hover:bg-idea-selection cursor-pointer transition-all flex flex-col gap-1"><div class="flex justify-between items-start gap-2"><span class="font-mono font-bold text-slate-700 dark:text-idea-field text-sm break-all">{{ t.displayName }}</span><span class="text-[10px] px-1.5 py-0.5 rounded font-mono shrink-0 bg-slate-100 dark:bg-idea-bg text-slate-500">Extends: {{ node.fieldType }}</span></div><p class="text-xs text-slate-500 dark:text-idea-textMuted leading-relaxed break-words">{{ t.doc }}</p><span v-if="t.displayName !== t.name" class="text-[10px] text-slate-400 font-mono">{{ t.name }}</span></div></div></div><div v-if="displayMode === 'type-select'" class="text-center pt-3 mt-2 border-t border-slate-100 dark:border-idea-borderDark"><button @click="bypassTypeSelect" class="text-xs text-slate-500 hover:text-indigo-600 dark:hover:text-idea-keyword underline">直接配置基类属性 (不指定子类)</button></div></div></div></transition>
+        <transition name="fade"><div v-if="contextMenuVisible" class="fixed z-[80] bg-white dark:bg-idea-panel rounded-lg shadow-xl border border-slate-200 dark:border-idea-border py-1 min-w-[160px]" :style="{ left: contextMenuX + 'px', top: contextMenuY + 'px' }" @click.stop><button @click="editLangPack" class="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-idea-text hover:bg-slate-100 dark:hover:bg-idea-hover">编辑语言包</button><button @click="copyFieldName" class="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-idea-text hover:bg-slate-100 dark:hover:bg-idea-hover">复制字段名</button></div></transition>
+        <transition name="modal"><div v-if="langEditorVisible" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[70] flex items-center justify-center p-4" @click.stop="langEditorVisible = false"><div class="modal-content bg-white dark:bg-idea-panel rounded-xl shadow-2xl p-4 md:p-6 w-full max-w-[450px] border border-transparent dark:border-idea-borderDark" @click.stop><div class="flex justify-between items-center mb-4"><h3 class="text-lg font-bold text-slate-800 dark:text-idea-text">编辑语言包</h3><button @click="langEditorVisible = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-idea-text"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></div><div class="space-y-3"><div><label class="block text-xs font-medium text-slate-500 dark:text-idea-textMuted mb-1">字段显示名</label><input v-model="langEditName" class="w-full border border-slate-300 dark:border-idea-border rounded-md px-3 py-2 text-sm bg-white dark:bg-idea-bg text-slate-800 dark:text-idea-text focus:border-indigo-500 outline-none"></div><div><label class="block text-xs font-medium text-slate-500 dark:text-idea-textMuted mb-1">字段描述</label><textarea v-model="langEditDoc" rows="3" class="w-full border border-slate-300 dark:border-idea-border rounded-md px-3 py-2 text-sm bg-white dark:bg-idea-bg text-slate-800 dark:text-idea-text focus:border-indigo-500 outline-none resize-none"></textarea></div></div><div class="flex justify-end gap-2 mt-4"><button @click="langEditorVisible = false" class="px-4 py-2 text-sm text-slate-600 dark:text-idea-text hover:bg-slate-100 dark:hover:bg-idea-hover rounded">取消</button><button @click="saveLangPack" class="px-4 py-2 text-sm bg-indigo-600 dark:bg-idea-button text-white rounded hover:bg-indigo-700">保存</button></div></div></div></transition>
+    </div>
+</template>
+
+</body>
+</html>

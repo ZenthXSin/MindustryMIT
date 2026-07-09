@@ -448,9 +448,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================
     const app = createApp({
         setup() {
-            const wsUrl = ref('ws://localhost:8317');
-            const dataDir = ref('.mindustrymit-data');
-            const connected = ref(false); const isConnecting = ref(false); const connectProgress = ref({ text: '', percent: 0 });
+            const wsUrl = ref(localStorage.getItem('mmit.wsUrl') || 'ws://127.0.0.1:8317');
+            const dataDir = ref(localStorage.getItem('mmit.dataDir') || '.mindustrymit-data');
+            const connected = ref(false); const isConnecting = ref(false); const connectProgress = ref({ text: '未连接', percent: 0 });
+            const showHome = ref(true); const homeSettingsOpen = ref(false); const homeMoreOpen = ref(false); let autoConnectAttempted = false;
             const isLoadingClasses = ref(false); const isLoadingFields = ref(false);
             const classList = ref([]); const selectedClass = ref('Block'); const classId = ref(null);
             const allFields = ref([]); const searchQuery = ref(''); const rootNodes = ref([]);
@@ -488,6 +489,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const isDarkMode = ref(document.documentElement.classList.contains('dark'));
             const toasts = ref([]); let instanceOpToken = 0;
             const showToast = (msg, type = 'info') => { const id = Date.now() + Math.random(); toasts.value.push({ id, msg, type }); setTimeout(() => { toasts.value = toasts.value.filter(t => t.id !== id); }, 3000); };
+            const saveConnectionSettings = () => { localStorage.setItem('mmit.wsUrl', wsUrl.value.trim()); localStorage.setItem('mmit.dataDir', dataDir.value.trim()); };
+            const normalizeConnectionUrl = () => { let correctedUrl = wsUrl.value.trim(); if (correctedUrl.startsWith('ws//')) correctedUrl = 'ws://' + correctedUrl.slice(4); else if (correctedUrl.startsWith('wss//')) correctedUrl = 'wss://' + correctedUrl.slice(5); wsUrl.value = correctedUrl || 'ws://127.0.0.1:8317'; saveConnectionSettings(); return wsUrl.value; };
+            const handleStart = () => {
+                if (!connected.value) { showToast('正在连接，请稍候', 'info'); return; }
+                window.location.href = '/workspace.html';
+            };
             const cleanupOldClass = async (oldClassId, newClassId) => { if (oldClassId === null || oldClassId === undefined || oldClassId === newClassId) return; try { await wsApi.send('RemoveClass', { Class_Id: oldClassId }); } catch (e) { console.warn('清理旧实例失败:', e); } };
             provide('showToast', showToast); provide('selectedClass', selectedClass); provide('allFields', allFields);
 
@@ -546,6 +553,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const handleWsClose = () => {
                 const wasConnected = connected.value;
                 connected.value = false; isConnecting.value = false; isLoadingFields.value = false; importing.value = false;
+                connectProgress.value = { text: wasConnected ? '连接已断开' : '未连接', percent: 0 };
                 closeTransientPanels();
                 if (wasConnected) showToast('连接已断开', 'error');
             };
@@ -610,6 +618,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 window.addEventListener('ws-close', handleWsClose);
                 loadBuiltinDefaultsIfEmpty();
                 loadLocalProjects();
+                if (!autoConnectAttempted) {
+                    autoConnectAttempted = true;
+                    connectAndInit({ auto: true });
+                }
             });
 
             onUnmounted(() => {
@@ -702,11 +714,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 classList.value = classObjs;
             };
 
-            const connectAndInit = async () => {
+            const connectAndInit = async (options = {}) => {
+                if (isConnecting.value) return;
+                const manual = options.manual === true;
                 isConnecting.value = true; connectProgress.value = { text: '正在连接 WebSocket...', percent: 5 };
                 try {
-                    let correctedUrl = wsUrl.value.trim(); if (correctedUrl.startsWith('ws//')) correctedUrl = 'ws://' + correctedUrl.slice(4); else if (correctedUrl.startsWith('wss//')) correctedUrl = 'wss://' + correctedUrl.slice(5); wsUrl.value = correctedUrl;
+                    const correctedUrl = normalizeConnectionUrl();
                     parentClassMapToken++; parentClassMapPromise = null;
+                    wsApi.closeSilently();
                     await wsApi.connect(correctedUrl); connectProgress.value = { text: '连接成功，正在初始化...', percent: 15 };
                     await wsApi.send('Init', { Data_Dir: dataDir.value });
                     connectProgress.value = { text: '正在创建 Block 实例...', percent: 25 };
@@ -725,9 +740,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         return { name: cls, displayName: dName, doc: doc === "" ? "暂无描述" : doc, weight, _isBasic: false };
                     }));
                     classObjs.sort((a, b) => b.weight - a.weight || a.name.localeCompare(b.name)); classList.value = classObjs;
-                    connectProgress.value = { text: '完成', percent: 100 }; connected.value = true;
+                    connectProgress.value = { text: '已连接', percent: 100 }; connected.value = true;
                     buildParentClassMap(rawClasses).catch(() => {});
-                } catch (e) { showToast("连接或初始化失败: " + (e.message || e), 'error'); connected.value = false; connectProgress.value = { text: '失败: ' + (e.message || ''), percent: 0 }; } finally { isConnecting.value = false; }
+                    if (manual) showToast('连接成功', 'success');
+                } catch (e) { if (manual) showToast("连接或初始化失败: " + (e.message || e), 'error'); connected.value = false; connectProgress.value = { text: '失败: ' + (e.message || ''), percent: 0 }; } finally { isConnecting.value = false; }
             };
 
             // ==========================================
@@ -992,9 +1008,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const filteredFields = computed(() => { if (!searchQuery.value) return allFields.value; const q = searchQuery.value.toLowerCase(); return allFields.value.filter(f => f.name.toLowerCase().includes(q) || f.displayName.toLowerCase().includes(q) || (f.type && f.type.toLowerCase().includes(q)) || (f.doc && f.doc.toLowerCase().includes(q))); });
             const filteredClassList = computed(() => { if (!classSearchQuery.value) return classList.value; const q = classSearchQuery.value.toLowerCase(); return classList.value.filter(cls => cls.name.toLowerCase().includes(q) || cls.displayName.toLowerCase().includes(q) || cls.doc.toLowerCase().includes(q)); });
+            const connectionStatusLabel = computed(() => connected.value ? '已连接' : (isConnecting.value ? '连接中' : '未连接'));
+            const connectionStatusDotClass = computed(() => connected.value ? 'bg-green-400 animate-pulse' : (isConnecting.value ? 'bg-indigo-400 animate-pulse' : 'bg-red-400'));
+            const connectionStatusTextClass = computed(() => connected.value ? 'text-green-400' : (isConnecting.value ? 'text-indigo-400 dark:text-idea-keyword' : 'text-red-400'));
 
             return {
                 wsUrl, dataDir, connected, isConnecting, connectProgress, isLoadingClasses, isLoadingFields, connectAndInit,
+                showHome, homeSettingsOpen, homeMoreOpen, handleStart, saveConnectionSettings, connectionStatusLabel, connectionStatusDotClass, connectionStatusTextClass,
                 classList, selectedClass, classId, createInstance, allFields, searchQuery, filteredFields, rootNodes, addFieldToRoot, removeRootNode,
 
                 // 模式与 Schema
